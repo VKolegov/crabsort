@@ -63,10 +63,21 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         let path_str = path.display().to_string();
 
         let mut file_buff = [0u8; 512];
-        match f.read(&mut file_buff) {
-            Ok(n) => println!("Read {} bytes of {}", n, path_str),
-            Err(e) => eprintln!("Error while reading {}: {}", path_str, e),
+        let n = match f.read(&mut file_buff) {
+            Ok(n) => {
+                println!("Read {} bytes of {}", n, path_str);
+                n
+            },
+            Err(e) => {
+                eprintln!("Error while reading {}: {}", path_str, e);
+                continue;
+            }
         };
+
+
+        if let Some(kind) = infer::get(&file_buff[..n]) {
+            println!("mime: {}, ext: {}", kind.mime_type(), kind.extension());
+        }
     }
 
     Ok(())
