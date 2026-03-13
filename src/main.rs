@@ -1,4 +1,4 @@
-use std::{env, fs, io, path::{Path, PathBuf}, process};
+use std::{env, fs::{self, File}, io::{self, Read}, path::{Path, PathBuf}, process};
 
 fn main() {
     if let Err(e) = run() {
@@ -48,8 +48,25 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         let e = entry?;
         let path = e.path();
 
-        println!("str: {}", path.display().to_string());
+        if path.is_dir() {
+            continue;
+        }
 
+        let mut f = match File::open(&path) {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("Failed to read file: {}", e);
+                continue;
+            }
+        };
+
+        let path_str = path.display().to_string();
+
+        let mut file_buff = [0u8; 512];
+        match f.read(&mut file_buff) {
+            Ok(n) => println!("Read {} bytes of {}", n, path_str),
+            Err(e) => eprintln!("Error while reading {}: {}", path_str, e),
+        };
     }
 
     Ok(())
