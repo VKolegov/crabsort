@@ -16,24 +16,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     // 0 - program name
-    let first_arg = args.get(1).ok_or("directory argument required")?;
     let mut dry_run = false;
+    let mut dir_arg = "";
 
-    for arg in &args {
+    for arg in &args[1..] {
         if arg == "--dry" {
             println!("[warn] dry run");
             dry_run = true;
         }
+
+        if !arg.starts_with("--") {
+            dir_arg = arg;
+        }
     }
 
-    let dir = get_directory(&first_arg)?;
+    if dir_arg == "" {
+        return Err("directory argument required".into());
+    }
+
+    let dir = get_directory(&dir_arg)?;
 
     traverse_dir(&dir, &dry_run)?;
 
     Ok(())
 }
 
-fn get_directory(s: &String) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn get_directory(s: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let path = PathBuf::from(s);
 
     if !path.exists() {
