@@ -156,7 +156,8 @@ fn fallback_types_by_extension(ext: &str) -> Option<&'static FileType> {
         "fb2" => Some(&FileType::Document),
         "md" | "csv" => Some(&FileType::Document),
         "json" => Some(&FileType::Code),
-        "svg" => Some(&FileType::Image),
+        "svg" | "xcf" => Some(&FileType::Image),
+        "py" | "php" | "rs" | "c" | "cpp" | "go" => Some(&FileType::Code),
         _ => None,
     }
 }
