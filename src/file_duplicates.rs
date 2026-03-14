@@ -226,28 +226,20 @@ pub fn find_same_size_files_recursive(
     Ok(files_by_sizes)
 }
 
-fn file_fast_hash(p: &PathBuf) -> Result<String, Box<dyn Error>> {
-    let mut f = File::open(p)?;
+fn file_hash(path: &Path) -> Result<String, Box<dyn Error>> {
+    use blake3::Hasher;
 
-    let mut file_buff = [0u8; 8 * 1024]; //8 kb max
+    let mut f = File::open(path)?;
+    let mut hasher = Hasher::new();
+    let mut buffer = [0u8; 8192];
 
-    _ = f.read(&mut file_buff)?;
+    loop {
+        let n = f.read(&mut buffer)?;
+        if n == 0 { break; }
+        hasher.update(&buffer[..n]);
+    }
 
-    let hash = md5::compute(file_buff);
-
-    Ok(format!("{:x}", hash))
-}
-
-fn file_hash(p: &PathBuf) -> Result<String, Box<dyn Error>> {
-    let mut f = File::open(p)?;
-
-    let mut file_buff = Vec::new();
-
-    _ = f.read_to_end(&mut file_buff)?;
-
-    let hash = md5::compute(file_buff);
-
-    Ok(format!("{:x}", hash))
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn print_progress(metric: &str, c: u64, t: u64) -> Result<(), Box<dyn Error>> {
