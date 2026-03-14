@@ -78,6 +78,20 @@ static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     "text/x-shellscript" => FileType::Application,
 };
 
+fn type_dir(t: &FileType) -> Option<&'static str> {
+    return match t {
+        FileType::Image => Some("images"),
+        FileType::AnimatedImage => Some("images/animated"),
+        FileType::Video => Some("videos"),
+        FileType::Audio => Some("audios"),
+        FileType::Document => Some("documents"),
+        FileType::Text => Some("texts"),
+        FileType::Table => Some("tables"),
+        FileType::Archive => Some("archives"),
+        FileType::Application => Some("applications"),
+    };
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
@@ -146,6 +160,11 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         if let Some(kind) = infer::get(&file_buff[..n]) {
             if let Some(ft) = TYPE_MAP.get(kind.mime_type()) {
                 println!("file: {}, type: {:?}", path_str, ft);
+                if let Some(d) = type_dir(&ft) {
+                    let full_path = p.join(d);
+                    println!("dir: {}", full_path.display().to_string());
+                    ensure_dir(&full_path.display().to_string());
+                }
             } else {
                 println!(
                     "unknown type, file: {}, mime: {}, ext: {}",
@@ -156,6 +175,18 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+fn ensure_dir(p: &str) -> Result<(), io::Error> {
+    let exists = fs::exists(p)?;
+
+    if exists {
+        return Ok(());
+    }
+
+    fs::create_dir(p)?;
 
     Ok(())
 }
