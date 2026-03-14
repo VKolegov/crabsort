@@ -66,25 +66,9 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
             .collect();
         let mut size_group_partial_hash_map = process_group(arc_file_vec, n_threads);
 
-        // for file_d in file_vec {
-        //     let hash_d = md5::compute(file_d.first_4kb);
-        //
-        //     let hash = format!("{:x}", hash_d);
-        //
-        //     file_hash_processed += 1;
-        //
-        //     print_progress(
-        //         "hash processed",
-        //         file_hash_processed,
-        //         files_count_for_partial_hash,
-        //     )?;
-        //
-        //     if let Some(v) = size_group_partial_hash_map.get_mut(&hash) {
-        //         v.push(file_d);
-        //     } else {
-        //         size_group_partial_hash_map.insert(hash, vec![file_d]);
-        //     }
-        // }
+        file_hash_processed += file_vec.len() as u64;
+
+        print_progress("1 step groups processed", file_hash_processed, files_count_for_partial_hash)?;
 
         // filtering groups within size groups
         size_group_partial_hash_map.retain(|_k, v| {
@@ -150,8 +134,8 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
         // filtering groups within size groups
         phash_group_full_hash_map.retain(|_k, v| v.len() >= 2);
 
-        for (k, v) in phash_group_full_hash_map.iter_mut() {
-            if full_hash_map.get(k).is_none() {
+        for (k, v) in phash_group_full_hash_map {
+            if full_hash_map.get(&k).is_none() {
                 full_hash_map.insert(k.to_string(), v.to_vec());
             }
         }
@@ -288,7 +272,7 @@ fn file_hash(p: &PathBuf) -> Result<String, Box<dyn Error>> {
 
     let mut file_buff = Vec::new();
 
-    _ = f.read(&mut file_buff)?;
+    _ = f.read_to_end(&mut file_buff)?;
 
     let hash = md5::compute(file_buff);
 
