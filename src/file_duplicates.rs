@@ -64,7 +64,7 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
                 })
             })
             .collect();
-        let mut size_group_partial_hash_map = process_group(arc_file_vec, n_threads);
+        let mut size_group_partial_hash_map = process_group_partial_hash(arc_file_vec, n_threads);
 
         file_hash_processed += file_vec.len() as u64;
 
@@ -106,30 +106,11 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     // step 3
     let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for (_, file_vec) in partial_hash_map {
-        let mut phash_group_full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+        let mut phash_group_full_hash_map = process_group_full_hash(file_vec.clone(), n_threads);
 
-        for file_d in file_vec {
-            let hash = match file_hash(&file_d.path) {
-                Ok(h) => h,
-                Err(_) => {
-                    continue;
-                }
-            };
+        file_hash_processed += file_vec.len() as u64;
 
-            file_hash_processed += 1;
-
-            print_progress(
-                "full hash processed",
-                file_hash_processed,
-                files_count_for_full_hash,
-            )?;
-
-            if let Some(v) = phash_group_full_hash_map.get_mut(&hash) {
-                v.push(file_d);
-            } else {
-                phash_group_full_hash_map.insert(hash, vec![file_d]);
-            }
-        }
+        print_progress("full hash processed", file_hash_processed, files_count_for_full_hash)?;
 
         // filtering groups within size groups
         phash_group_full_hash_map.retain(|_k, v| v.len() >= 2);
@@ -290,7 +271,7 @@ fn print_progress(metric: &str, c: u64, t: u64) -> Result<(), Box<dyn Error>> {
 //================ parallel processing
 //
 //
-fn process_group(
+fn process_group_partial_hash(
     file_vec: Vec<Arc<FileInfo>>,
     n_threads: usize,
 ) -> HashMap<String, Vec<Arc<FileInfo>>> {
@@ -322,3 +303,43 @@ fn process_group(
 
     merged_map
 }
+
+
+fn process_group_full_hash(
+    file_vec: Vec<Arc<FileInfo>>,
+    n_threads: usize,
+) -> HashMap<String, Vec<Arc<FileInfo>>> {
+    let chunk_size = (file_vec.len() + n_threads - 1) / n_threads;
+    let chunks: Vec<_> = file_vec.chunks(chunk_size).map(|c| c.to_vec()).collect();
+
+    let handles: Vec<_> = chunks
+        .into_iter()
+        .map(|chunk| {
+            let chunk = chunk.to_vec(); // клонируем слайс ссылок
+            thread::spawn(move || {
+                let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+                for file_d in chunk {
+                    let hash = match file_hash(&file_d.path) {
+                        Ok(h) => h,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
+                    local_map.entry(hash).or_default().push(file_d);
+                }
+                local_map
+            })
+        })
+        .collect();
+
+    let mut merged_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+    for handle in handles {
+        let local_map = handle.join().unwrap();
+        for (hash, vec) in local_map {
+            merged_map.entry(hash).or_default().extend(vec);
+        }
+    }
+
+    merged_map
+}
+
