@@ -1,3 +1,5 @@
+use std::{fs::File, path::Path, io::Read};
+
 use phf::phf_map;
 
 #[derive(Debug)]
@@ -89,7 +91,39 @@ pub fn type_dir(t: &FileType) -> Option<&'static str> {
     };
 }
 
-pub fn detect_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
+pub fn detect_file_type(p: &Path) -> Option<&'static FileType> {
+
+    if p.is_dir() {
+        return None;
+    }
+
+    let mut f = match File::open(p) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Failed to read file: {}", e);
+            return None;
+        }
+    };
+
+    let path_str = p.display().to_string();
+
+    let mut file_buff = [0u8; 512];
+    let n = match f.read(&mut file_buff) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("Error while reading {}: {}", path_str, e);
+            return None;
+        }
+    };
+
+    if let Some(kind) = infer::get(&file_buff[..n]) {
+        return calculate_file_type(kind.mime_type(), kind.extension());
+    }
+
+    None
+}
+
+pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
     match TYPE_MAP.get(mime) {
         Some(FileType::Document) => match ext {
             "docx" | "xlsx" | "pptx" => Some(&FileType::Document),

@@ -2,19 +2,17 @@ mod file_types;
 
 use std::{
     env,
-    fs::{self, File},
-    io::{self, Read},
+    fs::{self},
+    io::{self},
     path::{Path, PathBuf},
     process,
 };
-use crate::file_types::{type_dir, TYPE_MAP, detect_file_type};
+use crate::file_types::{detect_file_type, type_dir};
 
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
-        process::exit(1);
-    }
-}
+        process::exit(1); } }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = get_directory()?;
@@ -51,46 +49,67 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         let e = entry?;
         let path = e.path();
 
-        if path.is_dir() {
-            continue;
-        }
+        // if path.is_dir() {
+        //     continue;
+        // }
+        //
+        // let mut f = match File::open(&path) {
+        //     Ok(file) => file,
+        //     Err(e) => {
+        //         eprintln!("Failed to read file: {}", e);
+        //         continue;
+        //     }
+        // };
+        //
+        // let path_str = path.display().to_string();
+        //
+        // let mut file_buff = [0u8; 512];
+        // let n = match f.read(&mut file_buff) {
+        //     Ok(n) => n,
+        //     Err(e) => {
+        //         eprintln!("Error while reading {}: {}", path_str, e);
+        //         continue;
+        //     }
+        // };
+        //
 
-        let mut f = match File::open(&path) {
-            Ok(file) => file,
-            Err(e) => {
-                eprintln!("Failed to read file: {}", e);
-                continue;
-            }
-        };
+
+
+        // if let Some(kind) = infer::get(&file_buff[..n]) {
+        //     if let Some(file_type) = calculate_file_type(kind.mime_type(), kind.extension()) {
+        //         println!("file: {}, mime: {}, type: {:?}", path_str, kind.mime_type(), file_type);
+        //         if let Some(d) = type_dir(&file_type) {
+        //             let full_path = p.join(d);
+        //             println!("dir: {}", full_path.display().to_string());
+        //             ensure_dir(&full_path.display().to_string());
+        //         }
+        //     } else {
+        //         println!(
+        //             "unknown type, file: {}, mime: {}, ext: {}",
+        //             path_str,
+        //             kind.mime_type(),
+        //             kind.extension()
+        //         );
+        //     }
+        // }
+        //
 
         let path_str = path.display().to_string();
 
-        let mut file_buff = [0u8; 512];
-        let n = match f.read(&mut file_buff) {
-            Ok(n) => n,
-            Err(e) => {
-                eprintln!("Error while reading {}: {}", path_str, e);
-                continue;
+        if let Some(file_type) = detect_file_type(p) {
+            println!("file: {}, type: {:?}", path_str, file_type);
+            if let Some(d) = type_dir(&file_type) {
+                let full_path = p.join(d);
+                println!("dir: {}", full_path.display().to_string());
+                ensure_dir(&full_path.display().to_string());
             }
-        };
-
-        if let Some(kind) = infer::get(&file_buff[..n]) {
-            if let Some(file_type) = detect_file_type(kind.mime_type(), kind.extension()) {
-                println!("file: {}, mime: {}, type: {:?}", path_str, kind.mime_type(), file_type);
-                if let Some(d) = type_dir(&file_type) {
-                    let full_path = p.join(d);
-                    println!("dir: {}", full_path.display().to_string());
-                    ensure_dir(&full_path.display().to_string());
-                }
-            } else {
-                println!(
-                    "unknown type, file: {}, mime: {}, ext: {}",
-                    path_str,
-                    kind.mime_type(),
-                    kind.extension()
-                );
-            }
+        } else {
+            println!(
+                "unknown type, file: {}",
+                path_str,
+            );
         }
+
     }
 
     Ok(())
