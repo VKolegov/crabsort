@@ -62,8 +62,17 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
                 // println!("file: {}, type: {:?}", path_str, file_type);
                 if let Some(d) = type_dir(&file_type) {
                     let full_path = p.join(d);
-                    println!("dir: {}", full_path.display().to_string());
+                    let filename = path.file_name().unwrap().display().to_string();
+                    let new_path = full_path.join(filename);
                     ensure_dir(&full_path.display().to_string());
+                    println!("{} -> {}", path_str, new_path.display().to_string());
+                    if let Err(e) = fs::copy(&path, &new_path) {
+                        eprintln!("Failed to copy {} -> {}: {}", path.display(), new_path.display(), e);
+                    } else {
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("Failed to remove {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
             Err(e) => {

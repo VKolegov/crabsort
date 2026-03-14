@@ -85,11 +85,10 @@ pub fn type_dir(t: &FileType) -> Option<&'static str> {
         FileType::Document => Some("documents"),
         FileType::Text => Some("texts"),
         FileType::Table => Some("tables"),
-        // FileType::Archive => Some("archives"),
+        FileType::Archive => Some("archives"),
         FileType::Application => Some("applications"),
         FileType::Code => Some("code"),
         FileType::Torrent => Some("torrents"),
-        _ => None,
     };
 }
 
