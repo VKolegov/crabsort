@@ -104,10 +104,7 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
         return Err("it is a directory".into());
     }
 
-    let actual_extension = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let actual_extension = p.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     let mut f = match File::open(p) {
         Ok(file) => file,
@@ -115,7 +112,6 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
             return Err(format!("Failed to open file: {}", e).into());
         }
     };
-
 
     let mut file_buff = [0u8; 1024];
     let n = match f.read(&mut file_buff) {
@@ -136,25 +132,31 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
 pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
     match TYPE_MAP.get(mime) {
         Some(FileType::Archive) => match ext {
-            "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
+            "docx" | "xlsx" | "pptx" => fallback_types_by_extension(ext),
             _ => Some(&FileType::Archive),
         },
         Some(FileType::Code) => match ext {
-            "fb2" => Some(&FileType::Document),
+            "fb2" => fallback_types_by_extension(ext),
             _ => Some(&FileType::Code),
         },
         Some(FileType::Application) => match ext {
-            "doc" => Some(&FileType::Document),
+            "doc" => fallback_types_by_extension(ext),
             _ => Some(&FileType::Application),
         },
         Some(t) => Some(t),
-        None => match ext {
-            "txt" => Some(&FileType::Text),
-            "torrent" => Some(&FileType::Torrent),
-            "md" | "csv" => Some(&FileType::Document),
-            "json" => Some(&FileType::Code),
-            "svg" => Some(&FileType::Image),
-            _ => None,
-        },
+        None => fallback_types_by_extension(ext),
+    }
+}
+
+fn fallback_types_by_extension(ext: &str) -> Option<&'static FileType> {
+    match ext {
+        "txt" => Some(&FileType::Text),
+        "torrent" => Some(&FileType::Torrent),
+        "doc" | "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
+        "fb2" => Some(&FileType::Document),
+        "md" | "csv" => Some(&FileType::Document),
+        "json" => Some(&FileType::Code),
+        "svg" => Some(&FileType::Image),
+        _ => None,
     }
 }
