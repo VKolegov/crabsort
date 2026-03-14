@@ -14,6 +14,7 @@ pub enum FileType {
     Archive,
     Application,
     Code,
+    Torrent,
 }
 
 pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
@@ -87,21 +88,20 @@ pub fn type_dir(t: &FileType) -> Option<&'static str> {
         // FileType::Archive => Some("archives"),
         FileType::Application => Some("applications"),
         FileType::Code => Some("code"),
+        FileType::Torrent => Some("torrents"),
         _ => None,
     };
 }
 
 pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
-    let path_str = p.display().to_string();
-
     if p.is_dir() {
-        return Err(format!("{} is a directory", path_str).into());
+        return Err("it is a directory".into());
     }
 
     let mut f = match File::open(p) {
         Ok(file) => file,
         Err(e) => {
-            return Err(format!("Failed to open file {}: {}", path_str, e).into());
+            return Err(format!("Failed to open file: {}", e).into());
         }
     };
 
@@ -110,7 +110,7 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
     let n = match f.read(&mut file_buff) {
         Ok(n) => n,
         Err(e) => {
-            return Err(format!("Failed to read file {}: {}", path_str, e).into());
+            return Err(format!("Failed to read file: {}", e).into());
         }
     };
 
@@ -118,10 +118,17 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
         if let Some(f_type) = calculate_file_type(kind.mime_type(), kind.extension()) {
             return Ok(f_type);
         } else {
-            Err(format!("unsupported mime type: {} : {}", kind.mime_type(), path_str).into())
+            Err(format!("unsupported mime type: {}", kind.mime_type()).into())
         }
     } else {
-        Err(format!("file mime type undetected: {}", path_str).into())
+
+        let ext = p.extension().ok_or("file type unknown")?;
+
+        if let Some(f_type) = calculate_file_type("", &ext.display().to_string()) {
+            return Ok(f_type);
+        }
+
+        Err("file mime type undetected".into())
     }
 }
 
@@ -129,9 +136,15 @@ pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
     match TYPE_MAP.get(mime) {
         Some(FileType::Archive) => match ext {
             "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
-            _ => Some(&FileType::Document),
+            _ => Some(&FileType::Archive),
         },
         Some(t) => Some(t),
-        None => None,
+        None => match ext {
+            "txt" => Some(&FileType::Text),
+            "torrent" => Some(&FileType::Torrent),
+            "md" | "csv" => Some(&FileType::Document),
+            "json" => Some(&FileType::Code),
+            _ => None,
+        },
     }
 }
