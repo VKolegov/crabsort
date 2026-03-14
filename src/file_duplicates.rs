@@ -9,6 +9,7 @@ use std::{
 pub struct FileInfo {
     path: PathBuf,
     size: u64,
+    first_4kb: [u8; 4096],
 }
 
 pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn Error>> {
@@ -16,71 +17,71 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
         return Ok(());
     }
 
-    let files_by_sizes = find_same_size_files_recursive(p)?;
+    let mut files_by_sizes = find_same_size_files_recursive(p)?;
+
     let mut files_count_for_partial_hash: u64 = 0;
 
-    // processing groups
-    let mut possible_duplicates = Vec::new();
-    for (key, v) in &files_by_sizes {
+    let duplicate_groups_filtered = &mut files_by_sizes;
+
+    duplicate_groups_filtered.retain(|_key, v| {
         let l = v.len();
-        if l > 2 {
-            possible_duplicates.push(key);
-            if verbose {
-                println!("{} -> {}", key, l);
-            }
+        if l >= 2 {
             files_count_for_partial_hash += l as u64;
+            true
+        } else {
+            false
         }
-    }
+    });
 
     println!(
         "possible duplicate groups by size: {}",
-        possible_duplicates.len()
+        duplicate_groups_filtered.keys().count()
     );
 
+    println!("hash to count: {}", files_count_for_partial_hash);
+
     // step 2 - partial hash
-    let mut partial_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
     let mut file_hash_processed: u64 = 0;
+    let mut partial_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
 
-    for ele in possible_duplicates {
-        let group = files_by_sizes.get(ele).unwrap();
+    for (_, file_vec) in duplicate_groups_filtered {
+        let mut size_group_partial_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
 
-        for file_d in group {
-            let hash = match file_fast_hash(&file_d.path) {
-                Ok(h) => h,
-                Err(_) => {
-                    continue;
-                }
-            };
+        for file_d in file_vec {
+            let hash_d = md5::compute(file_d.first_4kb);
+
+            let hash = format!("{:x}", hash_d);
 
             file_hash_processed += 1;
 
-            print_progress("hash processed", &file_hash_processed, &files_count_for_partial_hash)?;
+            print_progress(
+                "hash processed",
+                file_hash_processed,
+                files_count_for_partial_hash,
+            )?;
 
-
-            if let Some(v) = partial_hash_map.get_mut(&hash) {
+            if let Some(v) = size_group_partial_hash_map.get_mut(&hash) {
                 v.push(file_d);
             } else {
-                partial_hash_map.insert(hash, vec![file_d]);
+                size_group_partial_hash_map.insert(hash, vec![file_d]);
+            }
+        }
+
+        // filtering groups within size groups
+        size_group_partial_hash_map.retain(|_k, v| v.len() >= 2);
+
+        for (k, v) in size_group_partial_hash_map.iter_mut() {
+            if partial_hash_map.get(k).is_none() {
+                partial_hash_map.insert(k.to_string(), v.to_vec());
             }
         }
     }
 
     println!("");
-    
-    // processing groups
-    let mut possible_duplicates = Vec::new();
-    for (key, v) in &partial_hash_map {
-        let l = v.len();
-        if l > 2 {
-            possible_duplicates.push(key);
-            if verbose {
-                println!("{} -> {}", key, l);
-            }
-        }
-    }
+
     println!(
         "possible duplicate groups by partial hash: {}",
-        possible_duplicates.len()
+        partial_hash_map.keys().count()
     );
 
     Ok(())
@@ -125,18 +126,35 @@ pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>
 
         let file_size = m.len();
 
-        if file_size == 0 {
+        // < 1kb
+        if file_size < 1024 {
             continue;
+        }
+
+        let mut f = match File::open(&path) {
+            Ok(ff) => ff,
+            Err(_) => {
+                continue;
+            }
+        };
+        let mut file_buff = [0u8; 4 * 1024]; //8 kb max
+
+        match f.read(&mut file_buff) {
+            Ok(_) => (),
+            Err(_) => {
+                continue;
+            }
         }
 
         dir_map.push(FileInfo {
             path: path,
             size: file_size,
+            first_4kb: file_buff,
         });
 
         *files_read += 1;
 
-        print_progress("files_read", files_read, &0)?;
+        print_progress("files_read", *files_read, 0)?;
     }
 
     Ok(dir_map)
@@ -148,20 +166,15 @@ pub fn find_same_size_files_recursive(
     let map = build_dir_flatmap(p, &mut 0)?;
     println!("");
 
-    let mut total_size = 0;
-
     // group by size
     let mut files_by_sizes: HashMap<u64, Vec<FileInfo>> = HashMap::new();
     for ele in map {
         if let Some(v) = files_by_sizes.get_mut(&ele.size) {
-            total_size += ele.size;
             v.push(ele);
         } else {
             files_by_sizes.insert(ele.size, vec![ele]);
         }
     }
-
-    println!("total possible duplicate size: {} kb", total_size / 1024);
 
     Ok(files_by_sizes)
 }
@@ -178,8 +191,8 @@ fn file_fast_hash(p: &PathBuf) -> Result<String, Box<dyn Error>> {
     Ok(format!("{:x}", hash))
 }
 
-fn print_progress(metric: &str, c: &u64, t: &u64) -> Result<(), Box<dyn Error>> {
-    if *c % 100 == 0 {
+fn print_progress(metric: &str, c: u64, t: u64) -> Result<(), Box<dyn Error>> {
+    if (t < 100) || (t > 0 && t - c < 100) || (c % 100 == 0) {
         print!("\r{}: {}/{}", metric, c, t);
         io::stdout().flush()?;
     }
