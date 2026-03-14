@@ -4,10 +4,11 @@ use std::{
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
 };
 
+#[derive(Debug)]
 pub struct FileInfo {
     path: PathBuf,
     size: u64,
@@ -25,7 +26,7 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
 
     println!("available threads: {}", n_threads);
 
-    let mut files_by_sizes = find_same_size_files_recursive(p)?;
+    let mut files_by_sizes = find_same_size_files_recursive_parallel(p, n_threads)?;
 
     let mut files_count_for_partial_hash: u64 = 0;
     let mut files_count_for_full_hash: u64 = 0;
@@ -139,96 +140,6 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     Ok(())
 }
 
-pub fn build_dir_flatmap(
-    p: &Path,
-    files_read: &mut u64,
-) -> Result<Vec<Arc<FileInfo>>, Box<dyn Error>> {
-    if !p.is_dir() {
-        return Err("not a dir".into());
-    }
-
-    let mut dir_map: Vec<Arc<FileInfo>> = Vec::new();
-
-    let r_dir = fs::read_dir(p)?;
-
-    for entry in r_dir {
-        let e = entry?;
-        let path = e.path();
-
-        if path.is_dir() {
-            let mut child_dir_map = match build_dir_flatmap(&path, files_read) {
-                Ok(cdm) => cdm,
-                Err(_) => {
-                    continue;
-                }
-            };
-
-            dir_map.append(&mut child_dir_map);
-
-            continue;
-        }
-
-        if !path.is_file() || path.is_symlink() {
-            continue;
-        }
-
-        let m = match e.metadata() {
-            Ok(meta) => meta,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        let file_size = m.len();
-
-        // < 100 kb
-        if file_size < 1024 * 100 {
-            continue;
-        }
-
-        // > 1gb
-        if file_size > 1024 * 1024 * 1024 {
-            continue;
-        }
-
-        let f_a_l_4kb = match read_first_and_last_4kb(&path, file_size) {
-            Ok(buf) => buf,
-            Err(_) => continue,
-        };
-
-        dir_map.push(Arc::from(FileInfo {
-            path: path,
-            size: file_size,
-            first_and_last_4kb: f_a_l_4kb,
-        }));
-
-        *files_read += 1;
-
-        print_progress("files_read", *files_read, 0)?;
-    }
-
-    Ok(dir_map)
-}
-
-pub fn find_same_size_files_recursive(
-    p: &Path,
-) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
-    let map = build_dir_flatmap(p, &mut 0)?;
-    println!("");
-
-    // group by size
-    let mut files_by_sizes: HashMap<u64, Vec<Arc<FileInfo>>> = HashMap::new();
-    for ele in map {
-        if let Some(v) = files_by_sizes.get_mut(&ele.size) {
-            v.push(ele);
-        } else {
-            files_by_sizes.insert(ele.size, vec![ele]);
-        }
-    }
-
-    Ok(files_by_sizes)
-}
-
 fn file_hash(path: &Path) -> Result<String, Box<dyn Error>> {
     use blake3::Hasher;
 
@@ -253,6 +164,22 @@ fn print_progress(metric: &str, c: u64, t: u64) -> Result<(), Box<dyn Error>> {
         io::stdout().flush()?;
     }
     Ok(())
+}
+
+fn read_first_and_last_4kb(path: &Path, file_size: u64) -> Result<[u8; 8192], Box<dyn Error>> {
+    let mut buffer = [0u8; 8192];
+    let mut f = File::open(path)?;
+
+    let first_read = std::cmp::min(file_size, 4096) as usize;
+    f.read(&mut buffer[..first_read])?;
+
+    if file_size > 4096 {
+        let last_read = std::cmp::min(file_size, 4096) as usize;
+        f.seek(SeekFrom::End(-(last_read as i64)))?;
+        f.read(&mut buffer[4096..4096 + last_read])?;
+    }
+
+    Ok(buffer)
 }
 
 //================ parallel processing
@@ -329,18 +256,80 @@ fn process_group_full_hash(
     merged_map
 }
 
-fn read_first_and_last_4kb(path: &Path, file_size: u64) -> Result<[u8; 8192], Box<dyn Error>> {
-    let mut buffer = [0u8; 8192];
-    let mut f = File::open(path)?;
+pub fn build_dir_flatmap_parallel(
+    p: &Path,
+    files_read: Arc<Mutex<u64>>,
+    max_threads: usize,
+) -> Vec<Arc<FileInfo>> {
+    let dir_map = Arc::new(Mutex::new(Vec::new()));
+    let mut handles: Vec<thread::JoinHandle<()>> = vec![];
 
-    let first_read = std::cmp::min(file_size, 4096) as usize;
-    f.read(&mut buffer[..first_read])?;
+    if let Ok(r_dir) = fs::read_dir(p) {
+        for entry in r_dir.filter_map(Result::ok) {
+            let path = entry.path();
+            let dir_map_clone = Arc::clone(&dir_map);
+            let files_read_clone = Arc::clone(&files_read);
 
-    if file_size > 4096 {
-        let last_read = std::cmp::min(file_size, 4096) as usize;
-        f.seek(SeekFrom::End(-(last_read as i64)))?;
-        f.read(&mut buffer[4096..4096 + last_read])?;
+            if path.is_dir() {
+                // Ограничиваем количество потоков
+                if handles.len() >= max_threads {
+                    for h in handles.drain(..) {
+                        h.join().unwrap();
+                    }
+                }
+
+                handles.push(thread::spawn(move || {
+                    let child_files =
+                        build_dir_flatmap_parallel(&path, files_read_clone, max_threads);
+                    let mut dm = dir_map_clone.lock().unwrap();
+                    dm.extend(child_files);
+                }));
+            } else if path.is_file() && !path.is_symlink() {
+                if let Ok(meta) = entry.metadata() {
+                    let file_size = meta.len();
+                    if file_size < 1024 * 100 || file_size > 1024 * 1024 * 1024 {
+                        continue;
+                    }
+
+                    if let Ok(buf) = read_first_and_last_4kb(&path, file_size) {
+                        let fi = Arc::new(FileInfo {
+                            path: path.clone(),
+                            size: file_size,
+                            first_and_last_4kb: buf,
+                        });
+
+                        let mut dm = dir_map_clone.lock().unwrap();
+                        dm.push(fi);
+                        let mut fr = files_read_clone.lock().unwrap();
+                        *fr += 1;
+                        print_progress("files_read", *fr, 0).unwrap();
+                    }
+                }
+            }
+        }
     }
 
-    Ok(buffer)
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    Arc::try_unwrap(dir_map).unwrap().into_inner().unwrap()
 }
+
+pub fn find_same_size_files_recursive_parallel(
+    p: &Path,
+    max_threads: usize,
+) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
+    let files_read = Arc::new(Mutex::new(0));
+    let files = build_dir_flatmap_parallel(p, Arc::clone(&files_read), max_threads);
+    println!("");
+
+    // Группировка по размеру
+    let mut files_by_sizes: HashMap<u64, Vec<Arc<FileInfo>>> = HashMap::new();
+    for f in files {
+        files_by_sizes.entry(f.size).or_default().push(f);
+    }
+
+    Ok(files_by_sizes)
+}
+

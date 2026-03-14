@@ -1,7 +1,7 @@
 mod file_types;
 mod file_duplicates;
 
-use crate::{file_duplicates::{find_duplicates, find_same_size_files_recursive}, file_types::{detect_file_type, type_dir}};
+use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}};
 use std::{ collections::HashMap, env,
     error::Error,
     fs::{self},
