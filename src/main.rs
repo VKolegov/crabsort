@@ -1,5 +1,6 @@
 mod file_types;
 
+use crate::file_types::{detect_file_type, type_dir};
 use std::{
     env,
     fs::{self},
@@ -7,12 +8,13 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
-use crate::file_types::{detect_file_type, type_dir};
 
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
-        process::exit(1); } }
+        process::exit(1);
+    }
+}
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = get_directory()?;
@@ -73,8 +75,6 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         // };
         //
 
-
-
         // if let Some(kind) = infer::get(&file_buff[..n]) {
         //     if let Some(file_type) = calculate_file_type(kind.mime_type(), kind.extension()) {
         //         println!("file: {}, mime: {}, type: {:?}", path_str, kind.mime_type(), file_type);
@@ -96,20 +96,19 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
 
         let path_str = path.display().to_string();
 
-        if let Some(file_type) = detect_file_type(p) {
-            println!("file: {}, type: {:?}", path_str, file_type);
-            if let Some(d) = type_dir(&file_type) {
-                let full_path = p.join(d);
-                println!("dir: {}", full_path.display().to_string());
-                ensure_dir(&full_path.display().to_string());
+        match detect_file_type(&path) {
+            Ok(file_type) => {
+                println!("file: {}, type: {:?}", path_str, file_type);
+                if let Some(d) = type_dir(&file_type) {
+                    let full_path = p.join(d);
+                    println!("dir: {}", full_path.display().to_string());
+                    ensure_dir(&full_path.display().to_string());
+                }
             }
-        } else {
-            println!(
-                "unknown type, file: {}",
-                path_str,
-            );
+            Err(e) => {
+                eprintln!("detect file type error: {}", e)
+            }
         }
-
     }
 
     Ok(())

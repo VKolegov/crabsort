@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path, io::Read};
+use std::{error::Error, fs::File, io::Read, path::Path};
 
 use phf::phf_map;
 
@@ -91,41 +91,43 @@ pub fn type_dir(t: &FileType) -> Option<&'static str> {
     };
 }
 
-pub fn detect_file_type(p: &Path) -> Option<&'static FileType> {
+pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
+    let path_str = p.display().to_string();
 
     if p.is_dir() {
-        return None;
+        return Err(format!("{} is a directory", path_str).into());
     }
 
     let mut f = match File::open(p) {
         Ok(file) => file,
         Err(e) => {
-            eprintln!("Failed to read file: {}", e);
-            return None;
+            return Err(format!("Failed to open file {}: {}", path_str, e).into());
         }
     };
 
-    let path_str = p.display().to_string();
 
     let mut file_buff = [0u8; 512];
     let n = match f.read(&mut file_buff) {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("Error while reading {}: {}", path_str, e);
-            return None;
+            return Err(format!("Failed to read file {}: {}", path_str, e).into());
         }
     };
 
     if let Some(kind) = infer::get(&file_buff[..n]) {
-        return calculate_file_type(kind.mime_type(), kind.extension());
+        if let Some(f_type) = calculate_file_type(kind.mime_type(), kind.extension()) {
+            return Ok(f_type);
+        } else {
+            Err(format!("unsupported mime type: {} : {}", kind.mime_type(), path_str).into())
+        }
+    } else {
+        Err(format!("file mime type undetected: {}", path_str).into())
     }
-
-    None
 }
 
 pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
     match TYPE_MAP.get(mime) {
-        Some(FileType::Document) => match ext {
+        Some(FileType::Archive) => match ext {
             "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
             _ => Some(&FileType::Document),
         },
