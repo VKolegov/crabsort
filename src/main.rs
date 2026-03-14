@@ -2,11 +2,7 @@ mod file_types;
 
 use crate::file_types::{detect_file_type, type_dir};
 use std::{
-    env,
-    fs::{self},
-    io::{self},
-    path::{Path, PathBuf},
-    process,
+    env, error::Error, fs::{self}, io::{self}, path::{Path, PathBuf}, process
 };
 
 fn main() {
@@ -32,8 +28,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let dir = get_directory(&first_arg)?;
 
-
-    traverse_dir(&dir, &dry_run);
+    traverse_dir(&dir, &dry_run)?;
 
     Ok(())
 }
@@ -52,7 +47,7 @@ fn get_directory(s: &String) -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
-fn traverse_dir(p: &Path, dry: &bool) -> io::Result<()> {
+fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
     if !p.is_dir() {
         return Ok(());
     }
@@ -67,34 +62,54 @@ fn traverse_dir(p: &Path, dry: &bool) -> io::Result<()> {
             continue;
         }
 
-        let path_str = path.display().to_string();
+        let file_type = if let Ok(ft) = detect_file_type(&path) {
+            ft
+        } else {
+            println!("Unsupported file type: {}", path.display());
+            continue;
+        };
 
-        match detect_file_type(&path) {
-            Ok(file_type) => {
-                // println!("file: {}, type: {:?}", path_str, file_type);
-                if let Some(d) = type_dir(&file_type) {
-                    let full_path = p.join(d);
-                    let filename = path.file_name().unwrap().display().to_string();
-                    let new_path = full_path.join(filename);
-                    ensure_dir(&full_path.display().to_string());
-                    println!("{} -> {}", path_str, new_path.display().to_string());
+        let paths: Option<(PathBuf, PathBuf)> = type_dir(file_type)
+            .and_then(|target_dir| {
+                let full_path = p.join(target_dir);
+                path.file_name()
+                    .and_then(|filename| filename.to_str())
+                    .map(|filename_str| {
+                        let new_path = full_path.join(filename_str);
+                        (full_path, new_path)
+                    })
+            });
 
-                    if *dry {
-                        println!("dry run - skip");
-                        continue;
-                    }
 
-                    if let Err(e) = fs::copy(&path, &new_path) {
-                        eprintln!("Failed to copy {} -> {}: {}", path.display(), new_path.display(), e);
-                    } else {
-                        if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("Failed to remove {}: {}", path.display(), e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("{}: detect file type error: {}", path_str, e)
+        if paths.is_none() {
+            continue;
+        }
+
+        let (full_path, new_path) = paths.unwrap();
+
+        println!("{} -> {}", full_path.display(), new_path.display());
+
+        if *dry {
+            println!("dry run - skip");
+            continue;
+        }
+
+        let full_path_str = full_path
+            .to_str()
+            .ok_or("wrong target dir name")?;
+
+         ensure_dir(full_path_str)?;
+        
+        if let Err(e) = fs::copy(&path, &new_path) {
+            eprintln!(
+                "Failed to copy {} -> {}: {}",
+                path.display(),
+                new_path.display(),
+                e
+            );
+        } else {
+            if let Err(e) = fs::remove_file(&path) {
+                eprintln!("Failed to remove {}: {}", path.display(), e);
             }
         }
     }
