@@ -54,21 +54,15 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
-        let arc_file_vec = file_vec
-            .iter()
-            .map(|fv| {
-                Arc::from(FileInfo {
-                    path: fv.path.clone(),
-                    size: fv.size,
-                    first_and_last_4kb: fv.first_and_last_4kb,
-                })
-            })
-            .collect();
-        let mut size_group_partial_hash_map = process_group_partial_hash(arc_file_vec, n_threads);
+        let mut size_group_partial_hash_map = process_group_partial_hash(file_vec.to_vec(), n_threads);
 
         file_hash_processed += file_vec.len() as u64;
 
-        print_progress("1 step groups processed", file_hash_processed, files_count_for_partial_hash)?;
+        print_progress(
+            "1 step groups processed",
+            file_hash_processed,
+            files_count_for_partial_hash,
+        )?;
 
         // filtering groups within size groups
         size_group_partial_hash_map.retain(|_k, v| {
@@ -87,9 +81,6 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
                 .entry(k.to_string())
                 .or_default()
                 .extend(v.clone());
-            // if partial_hash_map.get(k).is_none() {
-            //     partial_hash_map.insert(k.to_string(), v.to_vec());
-            // }
         }
     }
 
@@ -110,7 +101,11 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
 
         file_hash_processed += file_vec.len() as u64;
 
-        print_progress("full hash processed", file_hash_processed, files_count_for_full_hash)?;
+        print_progress(
+            "full hash processed",
+            file_hash_processed,
+            files_count_for_full_hash,
+        )?;
 
         // filtering groups within size groups
         phash_group_full_hash_map.retain(|_k, v| v.len() >= 2);
@@ -139,12 +134,15 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     Ok(())
 }
 
-pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>, Box<dyn Error>> {
+pub fn build_dir_flatmap(
+    p: &Path,
+    files_read: &mut u64,
+) -> Result<Vec<Arc<FileInfo>>, Box<dyn Error>> {
     if !p.is_dir() {
         return Err("not a dir".into());
     }
 
-    let mut dir_map: Vec<FileInfo> = Vec::new();
+    let mut dir_map: Vec<Arc<FileInfo>> = Vec::new();
 
     let r_dir = fs::read_dir(p)?;
 
@@ -193,11 +191,11 @@ pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>
             Err(_) => continue,
         };
 
-        dir_map.push(FileInfo {
+        dir_map.push(Arc::from(FileInfo {
             path: path,
             size: file_size,
             first_and_last_4kb: f_a_l_4kb,
-        });
+        }));
 
         *files_read += 1;
 
@@ -209,12 +207,12 @@ pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>
 
 pub fn find_same_size_files_recursive(
     p: &Path,
-) -> Result<HashMap<u64, Vec<FileInfo>>, Box<dyn Error>> {
+) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
     let map = build_dir_flatmap(p, &mut 0)?;
     println!("");
 
     // group by size
-    let mut files_by_sizes: HashMap<u64, Vec<FileInfo>> = HashMap::new();
+    let mut files_by_sizes: HashMap<u64, Vec<Arc<FileInfo>>> = HashMap::new();
     for ele in map {
         if let Some(v) = files_by_sizes.get_mut(&ele.size) {
             v.push(ele);
@@ -231,11 +229,13 @@ fn file_hash(path: &Path) -> Result<String, Box<dyn Error>> {
 
     let mut f = File::open(path)?;
     let mut hasher = Hasher::new();
-    let mut buffer = [0u8; 8192];
+    let mut buffer = [0u8; 64 * 1024];
 
     loop {
         let n = f.read(&mut buffer)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buffer[..n]);
     }
 
@@ -286,7 +286,6 @@ fn process_group_partial_hash(
     merged_map
 }
 
-
 fn process_group_full_hash(
     file_vec: Vec<Arc<FileInfo>>,
     n_threads: usize,
@@ -324,8 +323,6 @@ fn process_group_full_hash(
 
     merged_map
 }
-
-
 
 fn read_first_and_last_4kb(path: &Path, file_size: u64) -> Result<[u8; 8192], Box<dyn Error>> {
     let mut buffer = [0u8; 8192];
