@@ -25,6 +25,7 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     "image/bmp" => FileType::Image,
     "image/webp" => FileType::Image,
     "image/tiff" => FileType::Image,
+    "image/heif" => FileType::Image,
     "image/svg+xml" => FileType::Image,
     "image/x-icon" => FileType::Image,
 
@@ -39,6 +40,8 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
 
     "audio/mpeg" => FileType::Audio,
     "audio/opus" => FileType::Audio,
+    "audio/m4a" => FileType::Audio,
+    "audio/aac" => FileType::Audio,
 
     // документы
     "application/pdf" => FileType::Document,
@@ -62,17 +65,20 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     "application/zip" => FileType::Archive,
     "application/gzip" => FileType::Archive,
     "application/x-tar" => FileType::Archive,
+    "application/vnd.rar" => FileType::Archive,
 
     //
     "application/x-executable" => FileType::Application,
     "application/vnd.debian.binary-package" => FileType::Application,
     "text/x-shellscript" => FileType::Application,
+    "application/x-ole-storage" => FileType::Application,
 
     "text/html" => FileType::Code,
     "text/css" => FileType::Code,
     "text/javascript" => FileType::Code,
     "application/json" => FileType::Code,
     "application/xml" => FileType::Code,
+    "text/xml" => FileType::Code,
     "application/x-yaml" => FileType::Code,
 };
 
@@ -131,6 +137,14 @@ pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
         Some(FileType::Archive) => match ext {
             "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
             _ => Some(&FileType::Archive),
+        },
+        Some(FileType::Code) => match ext {
+            "fb2" => Some(&FileType::Document),
+            _ => Some(&FileType::Code),
+        },
+        Some(FileType::Application) => match ext {
+            "doc" => Some(&FileType::Document),
+            _ => Some(&FileType::Application),
         },
         Some(t) => Some(t),
         None => match ext {
