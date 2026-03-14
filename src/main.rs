@@ -1,4 +1,5 @@
-use phf::phf_map;
+mod file_types;
+
 use std::{
     env,
     fs::{self, File},
@@ -6,91 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
-
-#[derive(Debug)]
-enum FileType {
-    Image,
-    AnimatedImage,
-    Video,
-    Audio,
-    Document,
-    Text,
-    Table,
-    Archive,
-    Application,
-}
-
-static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
-    // изображения
-    "image/jpeg" => FileType::Image,
-    "image/png" => FileType::Image,
-    "image/gif" => FileType::AnimatedImage,
-    "image/bmp" => FileType::Image,
-    "image/webp" => FileType::Image,
-    "image/tiff" => FileType::Image,
-    "image/svg+xml" => FileType::Image,
-    "image/x-icon" => FileType::Image,
-
-    // видео
-    "video/mp4" => FileType::Video,
-    "video/webm" => FileType::Video,
-    "video/ogg" => FileType::Video,
-    "video/quicktime" => FileType::Video,
-    "video/x-msvideo" => FileType::Video, // avi
-    "video/x-ms-wmv" => FileType::Video,
-    "video/mpeg" => FileType::Video,
-
-    "audio/mpeg" => FileType::Audio,
-    "audio/opus" => FileType::Audio,
-
-    // документы
-    "application/pdf" => FileType::Document,
-    "application/msword" => FileType::Document,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => FileType::Document, // docx
-    "application/vnd.ms-powerpoint" => FileType::Document,
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation" => FileType::Document, // pptx
-    "application/rtf" => FileType::Document,
-    "application/epub+zip" => FileType::Document,
-    "application/x-shockwave-flash" => FileType::Document, // swf
-
-    // текст
-    "text/plain" => FileType::Text,
-    "text/html" => FileType::Text,
-    "text/css" => FileType::Text,
-    "text/javascript" => FileType::Text,
-    "application/json" => FileType::Text,
-    "application/xml" => FileType::Text,
-    "application/x-yaml" => FileType::Text,
-    "text/markdown" => FileType::Text,
-
-    // таблицы
-    "text/csv" => FileType::Table,
-    "application/vnd.ms-excel" => FileType::Table, // xls
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => FileType::Table, // xlsx
-                                                                                            //
-    "application/zip" => FileType::Archive,
-    "application/gzip" => FileType::Archive,
-    "application/x-tar" => FileType::Archive,
-
-    //
-    "application/x-executable" => FileType::Application,
-    "application/vnd.debian.binary-package" => FileType::Application,
-    "text/x-shellscript" => FileType::Application,
-};
-
-fn type_dir(t: &FileType) -> Option<&'static str> {
-    return match t {
-        FileType::Image => Some("images"),
-        FileType::AnimatedImage => Some("images/animated"),
-        FileType::Video => Some("videos"),
-        FileType::Audio => Some("audios"),
-        FileType::Document => Some("documents"),
-        FileType::Text => Some("texts"),
-        FileType::Table => Some("tables"),
-        FileType::Archive => Some("archives"),
-        FileType::Application => Some("applications"),
-    };
-}
+use crate::file_types::{type_dir, TYPE_MAP};
 
 fn main() {
     if let Err(e) = run() {
