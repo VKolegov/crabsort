@@ -178,8 +178,8 @@ pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>
 
         let file_size = m.len();
 
-        // < 1kb
-        if file_size < 1024 {
+        // < 100 kb
+        if file_size < 1024 * 100 {
             continue;
         }
 
