@@ -1,9 +1,8 @@
 mod file_types;
+mod file_duplicates;
 
-use crate::file_types::{detect_file_type, type_dir};
-use std::{
-    collections::HashMap,
-    env,
+use crate::{file_duplicates::{find_duplicates, find_same_size_files_recursive}, file_types::{detect_file_type, type_dir}};
+use std::{ collections::HashMap, env,
     error::Error,
     fs::{self},
     io::{self},
@@ -25,6 +24,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut dry_run = false;
     let mut dir_arg = "";
     let mut verbose = false;
+    let mut duplicates_search = false;
 
     for arg in &args[1..] {
         if arg == "--dry" {
@@ -34,8 +34,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if arg == "--verbose" {
             verbose = true;
         }
+        if arg == "-d" {
+            duplicates_search = true;
+        }
 
-        if !arg.starts_with("--") {
+        if !arg.starts_with("-") {
             dir_arg = arg;
         }
     }
@@ -46,7 +49,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let dir = get_directory(&dir_arg)?;
 
-    traverse_dir(&dir, &dry_run, &verbose)?;
+
+    if duplicates_search {
+        find_duplicates(&dir, dry_run, verbose)?;
+    } else {
+        traverse_dir(&dir, &dry_run, &verbose)?;
+    }
 
     Ok(())
 }
