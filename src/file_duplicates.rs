@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     error::Error,
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -11,7 +11,7 @@ use std::{
 pub struct FileInfo {
     path: PathBuf,
     size: u64,
-    first_4kb: [u8; 4096],
+    first_and_last_4kb: [u8; 8192],
 }
 
 pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn Error>> {
@@ -60,7 +60,7 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
                 Arc::from(FileInfo {
                     path: fv.path.clone(),
                     size: fv.size,
-                    first_4kb: fv.first_4kb,
+                    first_and_last_4kb: fv.first_and_last_4kb,
                 })
             })
             .collect();
@@ -188,25 +188,15 @@ pub fn build_dir_flatmap(p: &Path, files_read: &mut u64) -> Result<Vec<FileInfo>
             continue;
         }
 
-        let mut f = match File::open(&path) {
-            Ok(ff) => ff,
-            Err(_) => {
-                continue;
-            }
+        let f_a_l_4kb = match read_first_and_last_4kb(&path, file_size) {
+            Ok(buf) => buf,
+            Err(_) => continue,
         };
-        let mut file_buff = [0u8; 4 * 1024]; //8 kb max
-
-        match f.read(&mut file_buff) {
-            Ok(_) => (),
-            Err(_) => {
-                continue;
-            }
-        }
 
         dir_map.push(FileInfo {
             path: path,
             size: file_size,
-            first_4kb: file_buff,
+            first_and_last_4kb: f_a_l_4kb,
         });
 
         *files_read += 1;
@@ -285,7 +275,7 @@ fn process_group_partial_hash(
             thread::spawn(move || {
                 let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
                 for file_d in chunk {
-                    let hash = format!("{:x}", md5::compute(&file_d.first_4kb));
+                    let hash = format!("{:x}", md5::compute(&file_d.first_and_last_4kb));
                     local_map.entry(hash).or_default().push(file_d);
                 }
                 local_map
@@ -343,3 +333,20 @@ fn process_group_full_hash(
     merged_map
 }
 
+
+
+fn read_first_and_last_4kb(path: &Path, file_size: u64) -> Result<[u8; 8192], Box<dyn Error>> {
+    let mut buffer = [0u8; 8192];
+    let mut f = File::open(path)?;
+
+    let first_read = std::cmp::min(file_size, 4096) as usize;
+    f.read(&mut buffer[..first_read])?;
+
+    if file_size > 4096 {
+        let last_read = std::cmp::min(file_size, 4096) as usize;
+        f.seek(SeekFrom::End(-(last_read as i64)))?;
+        f.read(&mut buffer[4096..4096 + last_read])?;
+    }
+
+    Ok(buffer)
+}
