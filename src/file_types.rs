@@ -71,6 +71,7 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     //
     "application/x-executable" => FileType::Application,
     "application/vnd.debian.binary-package" => FileType::Application,
+    "application/vnd.microsoft.portable-executable" => FileType::Application,
     "text/x-shellscript" => FileType::Application,
     "application/x-ole-storage" => FileType::Application,
 
@@ -157,7 +158,7 @@ fn fallback_types_by_extension(ext: &str) -> Option<&'static FileType> {
         "md" | "csv" => Some(&FileType::Document),
         "json" => Some(&FileType::Code),
         "svg" | "xcf" => Some(&FileType::Image),
-        "py" | "php" | "rs" | "c" | "cpp" | "go" => Some(&FileType::Code),
+        "py" | "php" | "rs" | "c" | "cpp" | "go" | "java" => Some(&FileType::Code),
         _ => None,
     }
 }
