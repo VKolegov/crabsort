@@ -26,6 +26,7 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     "image/webp" => FileType::Image,
     "image/tiff" => FileType::Image,
     "image/heif" => FileType::Image,
+    "image/avif" => FileType::Image,
     "image/svg+xml" => FileType::Image,
     "image/x-icon" => FileType::Image,
 
@@ -129,7 +130,7 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
         .unwrap_or("");
 
     calculate_file_type(mime, actual_extension)
-        .ok_or_else(|| format!("unsupported mime type: {}", mime).into())
+        .ok_or_else(|| format!("unsupported mime type: {} | {}", mime, actual_extension).into())
 }
 
 pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
@@ -152,6 +153,7 @@ pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
             "torrent" => Some(&FileType::Torrent),
             "md" | "csv" => Some(&FileType::Document),
             "json" => Some(&FileType::Code),
+            "svg" => Some(&FileType::Image),
             _ => None,
         },
     }
