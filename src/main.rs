@@ -24,11 +24,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 0 - program name
     let mut dry_run = false;
     let mut dir_arg = "";
+    let mut verbose = false;
 
     for arg in &args[1..] {
         if arg == "--dry" {
             println!("[warn] dry run");
             dry_run = true;
+        }
+        if arg == "--verbose" {
+            verbose = true;
         }
 
         if !arg.starts_with("--") {
@@ -42,7 +46,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let dir = get_directory(&dir_arg)?;
 
-    traverse_dir(&dir, &dry_run)?;
+    traverse_dir(&dir, &dry_run, &verbose)?;
 
     Ok(())
 }
@@ -61,7 +65,7 @@ fn get_directory(s: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
-fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
+fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Error>> {
     if !p.is_dir() {
         return Ok(());
     }
@@ -77,12 +81,21 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let file_type = if let Ok(ft) = detect_file_type(&path) {
-            ft
-        } else {
-            println!("Unsupported file type: {}", path.display());
-            continue;
+        let file_type = match detect_file_type(&path) {
+            Ok(ft) => ft,
+            Err(e) => {
+                println!("unsupported file {} : {}", path.display(), e);
+
+                if let Some(current_count) = count_map.get("unsupported") {
+                    count_map.insert("unsupported".to_string(), current_count + 1);
+                } else {
+                    count_map.insert("unsupported".to_string(), 1);
+                }
+
+                continue;
+            }
         };
+
 
         let paths: Option<(PathBuf, PathBuf)> = type_dir(file_type).and_then(|target_dir| {
             let full_path = p.join(target_dir);
@@ -108,10 +121,15 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
             count_map.insert(full_path_str.to_string(), 1);
         }
 
-        println!("{} -> {}", path.display(), new_path.display());
+
+        if *verbose {
+            println!("{} -> {}", path.display(), new_path.display());
+        }
 
         if *dry {
-            println!("dry run - skip");
+            if *verbose {
+                println!("dry run - skip");
+            }
             continue;
         }
 
