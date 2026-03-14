@@ -4,6 +4,8 @@ use std::{
     fs::{self, File},
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
+    thread,
 };
 
 pub struct FileInfo {
@@ -16,6 +18,12 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     if !p.is_dir() {
         return Ok(());
     }
+
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1); // fallback на 1
+
+    println!("available threads: {}", n_threads);
 
     let mut files_by_sizes = find_same_size_files_recursive(p)?;
 
@@ -43,30 +51,40 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
 
     // step 2 - partial hash
     let mut file_hash_processed: u64 = 0;
-    let mut partial_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+    let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
-        let mut size_group_partial_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+        let arc_file_vec = file_vec
+            .iter()
+            .map(|fv| {
+                Arc::from(FileInfo {
+                    path: fv.path.clone(),
+                    size: fv.size,
+                    first_4kb: fv.first_4kb,
+                })
+            })
+            .collect();
+        let mut size_group_partial_hash_map = process_group(arc_file_vec, n_threads);
 
-        for file_d in file_vec {
-            let hash_d = md5::compute(file_d.first_4kb);
-
-            let hash = format!("{:x}", hash_d);
-
-            file_hash_processed += 1;
-
-            print_progress(
-                "hash processed",
-                file_hash_processed,
-                files_count_for_partial_hash,
-            )?;
-
-            if let Some(v) = size_group_partial_hash_map.get_mut(&hash) {
-                v.push(file_d);
-            } else {
-                size_group_partial_hash_map.insert(hash, vec![file_d]);
-            }
-        }
+        // for file_d in file_vec {
+        //     let hash_d = md5::compute(file_d.first_4kb);
+        //
+        //     let hash = format!("{:x}", hash_d);
+        //
+        //     file_hash_processed += 1;
+        //
+        //     print_progress(
+        //         "hash processed",
+        //         file_hash_processed,
+        //         files_count_for_partial_hash,
+        //     )?;
+        //
+        //     if let Some(v) = size_group_partial_hash_map.get_mut(&hash) {
+        //         v.push(file_d);
+        //     } else {
+        //         size_group_partial_hash_map.insert(hash, vec![file_d]);
+        //     }
+        // }
 
         // filtering groups within size groups
         size_group_partial_hash_map.retain(|_k, v| {
@@ -81,9 +99,13 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
         });
 
         for (k, v) in size_group_partial_hash_map.iter_mut() {
-            if partial_hash_map.get(k).is_none() {
-                partial_hash_map.insert(k.to_string(), v.to_vec());
-            }
+            partial_hash_map
+                .entry(k.to_string())
+                .or_default()
+                .extend(v.clone());
+            // if partial_hash_map.get(k).is_none() {
+            //     partial_hash_map.insert(k.to_string(), v.to_vec());
+            // }
         }
     }
 
@@ -98,9 +120,9 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
 
     file_hash_processed = 0;
     // step 3
-    let mut full_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+    let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for (_, file_vec) in partial_hash_map {
-        let mut phash_group_full_hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+        let mut phash_group_full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
         for file_d in file_vec {
             let hash = match file_hash(&file_d.path) {
@@ -279,4 +301,40 @@ fn print_progress(metric: &str, c: u64, t: u64) -> Result<(), Box<dyn Error>> {
         io::stdout().flush()?;
     }
     Ok(())
+}
+
+//================ parallel processing
+//
+//
+fn process_group(
+    file_vec: Vec<Arc<FileInfo>>,
+    n_threads: usize,
+) -> HashMap<String, Vec<Arc<FileInfo>>> {
+    let chunk_size = (file_vec.len() + n_threads - 1) / n_threads;
+    let chunks: Vec<_> = file_vec.chunks(chunk_size).map(|c| c.to_vec()).collect();
+
+    let handles: Vec<_> = chunks
+        .into_iter()
+        .map(|chunk| {
+            let chunk = chunk.to_vec(); // клонируем слайс ссылок
+            thread::spawn(move || {
+                let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+                for file_d in chunk {
+                    let hash = format!("{:x}", md5::compute(&file_d.first_4kb));
+                    local_map.entry(hash).or_default().push(file_d);
+                }
+                local_map
+            })
+        })
+        .collect();
+
+    let mut merged_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+    for handle in handles {
+        let local_map = handle.join().unwrap();
+        for (hash, vec) in local_map {
+            merged_map.entry(hash).or_default().extend(vec);
+        }
+    }
+
+    merged_map
 }
