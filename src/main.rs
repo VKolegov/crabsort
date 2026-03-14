@@ -2,7 +2,13 @@ mod file_types;
 
 use crate::file_types::{detect_file_type, type_dir};
 use std::{
-    env, error::Error, fs::{self}, io::{self}, path::{Path, PathBuf}, process
+    collections::HashMap,
+    env,
+    error::Error,
+    fs::{self},
+    io::{self},
+    path::{Path, PathBuf},
+    process,
 };
 
 fn main() {
@@ -61,6 +67,7 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
     }
 
     let r_dir = fs::read_dir(p)?;
+    let mut count_map: HashMap<String, i32> = HashMap::new();
 
     for entry in r_dir {
         let e = entry?;
@@ -77,17 +84,15 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
             continue;
         };
 
-        let paths: Option<(PathBuf, PathBuf)> = type_dir(file_type)
-            .and_then(|target_dir| {
-                let full_path = p.join(target_dir);
-                path.file_name()
-                    .and_then(|filename| filename.to_str())
-                    .map(|filename_str| {
-                        let new_path = full_path.join(filename_str);
-                        (full_path, new_path)
-                    })
-            });
-
+        let paths: Option<(PathBuf, PathBuf)> = type_dir(file_type).and_then(|target_dir| {
+            let full_path = p.join(target_dir);
+            path.file_name()
+                .and_then(|filename| filename.to_str())
+                .map(|filename_str| {
+                    let new_path = full_path.join(filename_str);
+                    (full_path, new_path)
+                })
+        });
 
         if paths.is_none() {
             continue;
@@ -95,19 +100,23 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
 
         let (full_path, new_path) = paths.unwrap();
 
-        println!("{} -> {}", full_path.display(), new_path.display());
+        let full_path_str = full_path.to_str().ok_or("wrong target dir name")?;
+
+        if let Some(current_count) = count_map.get(full_path_str) {
+            count_map.insert(full_path_str.to_string(), current_count + 1);
+        } else {
+            count_map.insert(full_path_str.to_string(), 1);
+        }
+
+        println!("{} -> {}", path.display(), new_path.display());
 
         if *dry {
             println!("dry run - skip");
             continue;
         }
 
-        let full_path_str = full_path
-            .to_str()
-            .ok_or("wrong target dir name")?;
+        ensure_dir(full_path_str)?;
 
-         ensure_dir(full_path_str)?;
-        
         if let Err(e) = fs::copy(&path, &new_path) {
             eprintln!(
                 "Failed to copy {} -> {}: {}",
@@ -120,6 +129,10 @@ fn traverse_dir(p: &Path, dry: &bool) -> Result<(), Box<dyn Error>> {
                 eprintln!("Failed to remove {}: {}", path.display(), e);
             }
         }
+    }
+
+    for (key, value) in &count_map {
+        println!("{} => {}", key, value);
     }
 
     Ok(())
