@@ -17,17 +17,29 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = get_directory()?;
+    let args: Vec<String> = env::args().collect();
 
-    traverse_dir(&dir);
+    // 0 - program name
+    let first_arg = args.get(1).ok_or("directory argument required")?;
+    let mut dry_run = false;
+
+    for arg in &args {
+        if arg == "--dry" {
+            println!("[warn] dry run");
+            dry_run = true;
+        }
+    }
+
+    let dir = get_directory(&first_arg)?;
+
+
+    traverse_dir(&dir, &dry_run);
 
     Ok(())
 }
 
-fn get_directory() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let first_arg = env::args().nth(1).ok_or("directory argument required")?;
-
-    let path = PathBuf::from(first_arg);
+fn get_directory(s: &String) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = PathBuf::from(s);
 
     if !path.exists() {
         return Err("path does not exist".into());
@@ -40,7 +52,7 @@ fn get_directory() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
-fn traverse_dir(p: &Path) -> io::Result<()> {
+fn traverse_dir(p: &Path, dry: &bool) -> io::Result<()> {
     if !p.is_dir() {
         return Ok(());
     }
@@ -66,6 +78,12 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
                     let new_path = full_path.join(filename);
                     ensure_dir(&full_path.display().to_string());
                     println!("{} -> {}", path_str, new_path.display().to_string());
+
+                    if *dry {
+                        println!("dry run - skip");
+                        continue;
+                    }
+
                     if let Err(e) = fs::copy(&path, &new_path) {
                         eprintln!("Failed to copy {} -> {}: {}", path.display(), new_path.display(), e);
                     } else {

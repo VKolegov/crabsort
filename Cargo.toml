@@ -1,5 +1,5 @@
 [package]
-name = "dl_organizer"
+name = "crabsort"
 version = "0.1.0"
 edition = "2024"
 

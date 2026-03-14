@@ -97,6 +97,12 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
         return Err("it is a directory".into());
     }
 
+    let mut actual_extension = "";
+
+    if let Some(e) = p.extension() {
+        actual_extension = e.to_str().unwrap();
+    }
+
     let mut f = match File::open(p) {
         Ok(file) => file,
         Err(e) => {
@@ -105,7 +111,7 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
     };
 
 
-    let mut file_buff = [0u8; 512];
+    let mut file_buff = [0u8; 1024];
     let n = match f.read(&mut file_buff) {
         Ok(n) => n,
         Err(e) => {
@@ -114,16 +120,14 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
     };
 
     if let Some(kind) = infer::get(&file_buff[..n]) {
-        if let Some(f_type) = calculate_file_type(kind.mime_type(), kind.extension()) {
+        if let Some(f_type) = calculate_file_type(kind.mime_type(), actual_extension) {
             return Ok(f_type);
         } else {
             Err(format!("unsupported mime type: {}", kind.mime_type()).into())
         }
     } else {
 
-        let ext = p.extension().ok_or("file type unknown")?;
-
-        if let Some(f_type) = calculate_file_type("", &ext.display().to_string()) {
+        if let Some(f_type) = calculate_file_type("", actual_extension) {
             return Ok(f_type);
         }
 
@@ -132,6 +136,7 @@ pub fn detect_file_type(p: &Path) -> Result<&'static FileType, Box<dyn Error>> {
 }
 
 pub fn calculate_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
+    println!("mime: {}, ext: {}", mime, ext);
     match TYPE_MAP.get(mime) {
         Some(FileType::Archive) => match ext {
             "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
