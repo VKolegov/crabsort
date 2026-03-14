@@ -11,6 +11,7 @@ pub enum FileType {
     Table,
     Archive,
     Application,
+    Code,
 }
 
 pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
@@ -48,12 +49,6 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
 
     // текст
     "text/plain" => FileType::Text,
-    "text/html" => FileType::Text,
-    "text/css" => FileType::Text,
-    "text/javascript" => FileType::Text,
-    "application/json" => FileType::Text,
-    "application/xml" => FileType::Text,
-    "application/x-yaml" => FileType::Text,
     "text/markdown" => FileType::Text,
 
     // таблицы
@@ -69,6 +64,13 @@ pub static TYPE_MAP: phf::Map<&'static str, FileType> = phf_map! {
     "application/x-executable" => FileType::Application,
     "application/vnd.debian.binary-package" => FileType::Application,
     "text/x-shellscript" => FileType::Application,
+
+    "text/html" => FileType::Code,
+    "text/css" => FileType::Code,
+    "text/javascript" => FileType::Code,
+    "application/json" => FileType::Code,
+    "application/xml" => FileType::Code,
+    "application/x-yaml" => FileType::Code,
 };
 
 pub fn type_dir(t: &FileType) -> Option<&'static str> {
@@ -80,7 +82,20 @@ pub fn type_dir(t: &FileType) -> Option<&'static str> {
         FileType::Document => Some("documents"),
         FileType::Text => Some("texts"),
         FileType::Table => Some("tables"),
-        FileType::Archive => Some("archives"),
+        // FileType::Archive => Some("archives"),
         FileType::Application => Some("applications"),
+        FileType::Code => Some("code"),
+        _ => None,
     };
+}
+
+pub fn detect_file_type(mime: &str, ext: &str) -> Option<&'static FileType> {
+    match TYPE_MAP.get(mime) {
+        Some(FileType::Document) => match ext {
+            "docx" | "xlsx" | "pptx" => Some(&FileType::Document),
+            _ => Some(&FileType::Document),
+        },
+        Some(t) => Some(t),
+        None => None,
+    }
 }

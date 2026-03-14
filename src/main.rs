@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
-use crate::file_types::{type_dir, TYPE_MAP};
+use crate::file_types::{type_dir, TYPE_MAP, detect_file_type};
 
 fn main() {
     if let Err(e) = run() {
@@ -75,9 +75,9 @@ fn traverse_dir(p: &Path) -> io::Result<()> {
         };
 
         if let Some(kind) = infer::get(&file_buff[..n]) {
-            if let Some(ft) = TYPE_MAP.get(kind.mime_type()) {
-                println!("file: {}, type: {:?}", path_str, ft);
-                if let Some(d) = type_dir(&ft) {
+            if let Some(file_type) = detect_file_type(kind.mime_type(), kind.extension()) {
+                println!("file: {}, mime: {}, type: {:?}", path_str, kind.mime_type(), file_type);
+                if let Some(d) = type_dir(&file_type) {
                     let full_path = p.join(d);
                     println!("dir: {}", full_path.display().to_string());
                     ensure_dir(&full_path.display().to_string());
@@ -103,7 +103,7 @@ fn ensure_dir(p: &str) -> Result<(), io::Error> {
         return Ok(());
     }
 
-    fs::create_dir(p)?;
+    fs::create_dir_all(p)?;
 
     Ok(())
 }
