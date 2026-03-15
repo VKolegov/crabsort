@@ -40,11 +40,46 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        eprint!("{}", USAGE);
+        return Err("dir required".into());
+    }
+
+    let command = args[1].as_str();
+    if command == "--help" || command == "-h" {
+        print!("{}", USAGE);
+        return Ok(());
+    }
+
+    let mut dir_arg = "";
+
+    for arg in &args[1..] {
+        match arg.as_str() {
+            s if !s.starts_with('-') => dir_arg = s,
+            other => return Err(format!("unknown option: {}", other).into()),
+        }
+    }
+
+    if dir_arg.is_empty() {
+        eprint!("{}", USAGE);
+        return Err("directory argument required".into());
+    }
+
+    let dir = get_directory(dir_arg)?;
+
     term::enable_raw_mode();
     term::enter_alternate_screen();
     term::hide_cursor();
 
+    /* main state */
     let mut selected_n: usize = 0;
+    let mut mode: usize = 0;
+    let mut sort_stage: usize = 0;
+
+    let mut sortable: Option<HashMap<String, i32>> = None;
+    /* /main state */
 
     let (w, h) = term::terminal_size();
 
@@ -72,10 +107,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     loop {
-        //
-        // print!("\x1b[{};{}H", 5, 5);
-        //
-        // print!("\x1b[0;34;100m-----\x1b[0m");
         let (w, h) = term::terminal_size();
 
         if w != b.width || h != b.height {
@@ -84,16 +115,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         b.clear();
 
-        let menu_rect = &Rect {
-            x: lm,
-            y: h - menu_mb - menu_h,
-            w: w - lm - rm,
-            h: menu_h,
-        };
+        match mode {
+            0 => {
+                let menu_rect = &Rect {
+                    x: lm,
+                    y: h - menu_mb - menu_h,
+                    w: w - lm - rm,
+                    h: menu_h,
+                };
+                ui::draw_menu(&mut b, &menu_rect, "crabsort", &menu_items, selected_n);
+            }
+            1 => {
+                let sort_rect = &Rect {
+                    x: lm,
+                    y: h - menu_mb - 12,
+                    w: w - lm - rm,
+                    h: 12,
+                };
+                ui::draw_box(&mut b, &sort_rect, dir_arg, true);
 
-        ui::draw_menu(&mut b, &menu_rect, &menu_items, selected_n);
-
-        // ui::draw_box(&mut b, &menu_rect, "", true);
+                if let Some(ref h) = sortable {
+                    let mut i = 0;
+                    for (k, v) in h {
+                        let s = format!("{}: {}", k, v);
+                        b.put_str(sort_rect.x + 3, sort_rect.y + 1 + i, &s, buffer::Color::White, buffer::Color::Reset);
+                        i += 1;
+                    }
+                }
+            }
+            _ => (),
+        }
 
         print!("{}", b.flush());
         term::t_flush();
@@ -106,13 +157,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 };
             }
             term::Key::Char('j') => {
-                selected_n = match selected_n < 1 {
+                selected_n = match selected_n < menu_items.len() - 1 {
                     true => selected_n + 1,
                     false => selected_n,
                 };
             }
             term::Key::Char('q') => break,
-            term::Key::Enter => break,
+            term::Key::Enter => match mode {
+                0 => match selected_n {
+                    0 => {
+                        sortable = traverse_dir(&dir, true, false).ok();
+                        mode = 1;
+                    }
+                    2 => break,
+                    _ => (),
+                },
+                _ => (),
+            },
             _ => (),
         }
     }
@@ -120,61 +181,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     term::exit_alternate_screen();
     term::disable_raw_mode();
     term::show_cursor();
-
-    return Ok(());
-
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        eprint!("{}", USAGE);
-        return Err("command required (sort or clean)".into());
-    }
-
-    let command = args[1].as_str();
-    if command == "--help" || command == "-h" {
-        print!("{}", USAGE);
-        return Ok(());
-    }
-
-    let mut execute = false;
-    let mut verbose = false;
-    let mut dir_arg = "";
-
-    for arg in &args[2..] {
-        match arg.as_str() {
-            "--execute" => execute = true,
-            "--verbose" => verbose = true,
-            s if !s.starts_with('-') => dir_arg = s,
-            other => return Err(format!("unknown option: {}", other).into()),
-        }
-    }
-
-    if dir_arg.is_empty() {
-        eprint!("{}", USAGE);
-        return Err("directory argument required".into());
-    }
-
-    let dir = get_directory(dir_arg)?;
-    let dry_run = !execute;
-
-    match command {
-        "sort" => {
-            if dry_run {
-                println!("[dry run] use --execute to actually move files");
-            }
-            traverse_dir(&dir, &dry_run, &verbose)?;
-        }
-        "clean" => {
-            if dry_run {
-                println!("[dry run] use --execute to actually remove duplicates");
-            }
-            find_duplicates(&dir, dry_run, verbose)?;
-        }
-        other => {
-            eprint!("{}", USAGE);
-            return Err(format!("unknown command: {}", other).into());
-        }
-    }
 
     Ok(())
 }
@@ -193,9 +199,13 @@ fn get_directory(s: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
-fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Error>> {
+fn traverse_dir(
+    p: &Path,
+    dry: bool,
+    verbose: bool,
+) -> Result<HashMap<String, i32>, Box<dyn Error>> {
     if !p.is_dir() {
-        return Ok(());
+        return Err("not a dir".into());
     }
 
     let r_dir = fs::read_dir(p)?;
@@ -212,7 +222,7 @@ fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Erro
         let file_type = match detect_file_type(&path) {
             Ok(ft) => ft,
             Err(e) => {
-                println!("unsupported file {} : {}", path.display(), e);
+                // println!("unsupported file {} : {}", path.display(), e);
 
                 if let Some(current_count) = count_map.get("unsupported") {
                     count_map.insert("unsupported".to_string(), current_count + 1);
@@ -248,12 +258,12 @@ fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Erro
             count_map.insert(full_path_str.to_string(), 1);
         }
 
-        if *verbose {
+        if verbose {
             println!("{} -> {}", path.display(), new_path.display());
         }
 
-        if *dry {
-            if *verbose {
+        if dry {
+            if verbose {
                 println!("dry run - skip");
             }
             continue;
@@ -275,11 +285,7 @@ fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Erro
         }
     }
 
-    for (key, value) in &count_map {
-        println!("{} => {}", key, value);
-    }
-
-    Ok(())
+    Ok(count_map)
 }
 
 fn ensure_dir(p: &str) -> Result<(), io::Error> {
