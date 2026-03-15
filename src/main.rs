@@ -10,6 +10,18 @@ use std::{ collections::HashMap, env,
     process,
 };
 
+const USAGE: &str = "\
+Usage: crabsort <command> [options] <directory>
+
+Commands:
+  sort    Sort files into subdirectories by type (dry run by default)
+  clean   Find duplicate files
+
+Options:
+  --execute   Actually perform file operations (sort: move files, clean: TBD)
+  --verbose   Show detailed output
+";
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
@@ -20,40 +32,55 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
-    // 0 - program name
-    let mut dry_run = false;
-    let mut dir_arg = "";
+    if args.len() < 2 {
+        eprint!("{}", USAGE);
+        return Err("command required (sort or clean)".into());
+    }
+
+    let command = args[1].as_str();
+    if command == "--help" || command == "-h" {
+        print!("{}", USAGE);
+        return Ok(());
+    }
+
+    let mut execute = false;
     let mut verbose = false;
-    let mut duplicates_search = false;
+    let mut dir_arg = "";
 
-    for arg in &args[1..] {
-        if arg == "--dry" {
-            println!("[warn] dry run");
-            dry_run = true;
-        }
-        if arg == "--verbose" {
-            verbose = true;
-        }
-        if arg == "-d" {
-            duplicates_search = true;
-        }
-
-        if !arg.starts_with("-") {
-            dir_arg = arg;
+    for arg in &args[2..] {
+        match arg.as_str() {
+            "--execute" => execute = true,
+            "--verbose" => verbose = true,
+            s if !s.starts_with('-') => dir_arg = s,
+            other => return Err(format!("unknown option: {}", other).into()),
         }
     }
 
-    if dir_arg == "" {
+    if dir_arg.is_empty() {
+        eprint!("{}", USAGE);
         return Err("directory argument required".into());
     }
 
-    let dir = get_directory(&dir_arg)?;
+    let dir = get_directory(dir_arg)?;
+    let dry_run = !execute;
 
-
-    if duplicates_search {
-        find_duplicates(&dir, dry_run, verbose)?;
-    } else {
-        traverse_dir(&dir, &dry_run, &verbose)?;
+    match command {
+        "sort" => {
+            if dry_run {
+                println!("[dry run] use --execute to actually move files");
+            }
+            traverse_dir(&dir, &dry_run, &verbose)?;
+        }
+        "clean" => {
+            if dry_run {
+                println!("[dry run] use --execute to actually remove duplicates");
+            }
+            find_duplicates(&dir, dry_run, verbose)?;
+        }
+        other => {
+            eprint!("{}", USAGE);
+            return Err(format!("unknown command: {}", other).into());
+        }
     }
 
     Ok(())

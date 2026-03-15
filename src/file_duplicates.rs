@@ -126,8 +126,12 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
     );
 
 
+    println!("-----");
     let mut size_estimate = 0;
     for (_, file_vec) in &full_hash_map {
+
+        println!("{} kb x {}", file_vec[0].size / 1024, file_vec.len());
+
         for file_d in file_vec {
             println!("{} | {} kb", file_d.path.display(), file_d.size / 1024);
         }
