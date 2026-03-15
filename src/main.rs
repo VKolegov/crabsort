@@ -1,8 +1,9 @@
 mod file_types;
 mod file_duplicates;
 mod term;
+mod buffer;
 
-use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}};
+use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}, term::read_key};
 use std::{ collections::HashMap, env,
     error::Error,
     fs::{self},
@@ -31,6 +32,54 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+
+    term::enable_raw_mode();
+    term::enter_alternate_screen();
+    term::hide_cursor();
+
+    let (w,h) = term::terminal_size();
+
+    let mut b = buffer::Buffer::new(w, h);
+
+    loop {
+        //
+        // print!("\x1b[{};{}H", 5, 5);
+        //
+        // print!("\x1b[0;34;100m-----\x1b[0m");
+        let (w,h) = term::terminal_size();
+
+        if w != b.width || h != b.height {
+            b.resize(w, h);
+        }
+
+        b.clear();
+
+        b.set(10,10,'-', buffer::Color::Green, buffer::Color::Black);
+        b.set(10,11,'-', buffer::Color::Green, buffer::Color::Black);
+        b.set(10,12,'-', buffer::Color::Green, buffer::Color::Black);
+        b.set(11,10,'|', buffer::Color::Yellow, buffer::Color::Black);
+        b.set(12,10,'|', buffer::Color::Yellow, buffer::Color::Black);
+        b.set(13,10,'|', buffer::Color::Yellow, buffer::Color::Black);
+        b.set(14,10,'|', buffer::Color::Yellow, buffer::Color::Black);
+
+        print!("{}", b.flush());
+        term::t_flush();
+
+
+        match read_key() {
+            term::Key::Char('q') => break,
+            term::Key::Enter => break,
+            _ => (),
+        }
+    }
+
+    term::exit_alternate_screen();
+    term::disable_raw_mode();
+    term::show_cursor();
+
+    return Ok(());
+
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {

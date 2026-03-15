@@ -46,6 +46,14 @@ pub fn disable_raw_mode() {
     }
 }
 
+pub fn terminal_size() -> (u16, u16) {
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        libc::ioctl(to_fd(), libc::TIOCGWINSZ, &mut ws);
+        (ws.ws_col, ws.ws_row)
+    }
+}
+
 
 pub fn enter_alternate_screen() {
     print!("\x1b[?1049h");
@@ -57,12 +65,14 @@ pub fn exit_alternate_screen() {
     t_flush();
 }
 
-pub fn terminal_size() -> (u16, u16) {
-    unsafe {
-        let mut ws: libc::winsize = std::mem::zeroed();
-        libc::ioctl(to_fd(), libc::TIOCGWINSZ, &mut ws);
-        (ws.ws_col, ws.ws_row)
-    }
+pub fn hide_cursor() {
+    print!("\x1b[?25l");
+    t_flush();
+}
+
+pub fn show_cursor() {
+    print!("\x1b[?25h");
+    t_flush();
 }
 
 // keys
@@ -122,7 +132,7 @@ fn to_fd() -> i32 {
     return io::stdout().as_raw_fd();
 }
 
-fn t_flush() {
+pub fn t_flush() {
     io::stdout().flush().unwrap();
 }
 
