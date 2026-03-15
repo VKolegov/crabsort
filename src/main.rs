@@ -21,16 +21,154 @@ use std::{
 };
 
 const USAGE: &str = "\
-Usage: crabsort <command> [options] <directory>
+Usage: crabsort <directory>
 
-Commands:
-  sort    Sort files into subdirectories by type (dry run by default)
-  clean   Find duplicate files
-
-Options:
-  --execute   Actually perform file operations (sort: move files, clean: TBD)
-  --verbose   Show detailed output
+Sort and deduplicate files interactively.
 ";
+
+const LEFT_MARGIN: u16 = 2;
+const RIGHT_MARGIN: u16 = 2;
+const MENU_HEIGHT: u16 = 6;
+const MENU_MARGIN_BOTTOM: u16 = 1;
+const SORT_BOX_HEIGHT: u16 = 12;
+
+struct App {
+    dir: PathBuf,
+    dir_arg: String,
+    selected_n: usize,
+    mode: usize,
+    sortable: Option<HashMap<String, i32>>,
+    menu_items: Vec<MenuItem>,
+    buffer: buffer::Buffer,
+}
+
+impl App {
+    fn new(dir: PathBuf, dir_arg: String) -> Self {
+        let (w, h) = term::terminal_size();
+        Self {
+            dir,
+            dir_arg,
+            selected_n: 0,
+            mode: 0,
+            sortable: None,
+            menu_items: vec![
+                MenuItem {
+                    label: String::from("Sort"),
+                    key: "sort",
+                },
+                MenuItem {
+                    label: String::from("Duplicates (recursively)"),
+                    key: "duplicates",
+                },
+                MenuItem {
+                    label: String::from("Exit"),
+                    key: "exit",
+                },
+            ],
+            buffer: buffer::Buffer::new(w, h),
+        }
+    }
+
+    fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            let (w, h) = term::terminal_size();
+
+            if w != self.buffer.width || h != self.buffer.height {
+                self.buffer.resize(w, h);
+            }
+
+            self.buffer.clear();
+            self.render(w, h);
+
+            print!("{}", self.buffer.flush());
+            term::t_flush();
+
+            if !self.handle_input() {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn render(&mut self, w: u16, h: u16) {
+        match self.mode {
+            0 => self.render_menu(w, h),
+            1 => self.render_sort(w, h),
+            _ => (),
+        }
+    }
+
+    fn render_menu(&mut self, w: u16, h: u16) {
+        let menu_rect = Rect {
+            x: LEFT_MARGIN,
+            y: h - MENU_MARGIN_BOTTOM - MENU_HEIGHT,
+            w: w - LEFT_MARGIN - RIGHT_MARGIN,
+            h: MENU_HEIGHT,
+        };
+        ui::draw_menu(
+            &mut self.buffer,
+            &menu_rect,
+            "crabsort",
+            &self.menu_items,
+            self.selected_n,
+        );
+    }
+
+    fn render_sort(&mut self, w: u16, h: u16) {
+        let sort_rect = Rect {
+            x: LEFT_MARGIN,
+            y: h - MENU_MARGIN_BOTTOM - SORT_BOX_HEIGHT,
+            w: w - LEFT_MARGIN - RIGHT_MARGIN,
+            h: SORT_BOX_HEIGHT,
+        };
+        ui::draw_box(&mut self.buffer, &sort_rect, &self.dir_arg, true);
+
+        if let Some(ref h) = self.sortable {
+            let mut i = 0;
+            for (k, v) in h {
+                let s = format!("{}: {}", k, v);
+                self.buffer.put_str(
+                    sort_rect.x + 3,
+                    sort_rect.y + 1 + i,
+                    &s,
+                    buffer::Color::White,
+                    buffer::Color::Reset,
+                );
+                i += 1;
+            }
+        }
+    }
+
+    fn handle_input(&mut self) -> bool {
+        match read_key() {
+            term::Key::Char('k') => {
+                if self.selected_n > 0 {
+                    self.selected_n -= 1;
+                }
+            }
+            term::Key::Char('j') => {
+                if self.selected_n < self.menu_items.len() - 1 {
+                    self.selected_n += 1;
+                }
+            }
+            term::Key::Char('q') => return false,
+            term::Key::Enter => match self.mode {
+                0 => match self.selected_n {
+                    0 => {
+                        self.sortable = traverse_dir(&self.dir, true, false).ok();
+                        self.mode = 1;
+                    }
+                    2 => return false,
+                    _ => (),
+                },
+                _ => (),
+            },
+            _ => (),
+        }
+        true
+    }
+}
 
 fn main() {
     if let Err(e) = run() {
@@ -39,7 +177,24 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), Box<dyn Error>> {
+    let (dir, dir_arg) = parse_args()?;
+
+    term::enable_raw_mode();
+    term::enter_alternate_screen();
+    term::hide_cursor();
+
+    let mut app = App::new(dir, dir_arg);
+    let result = app.run();
+
+    term::exit_alternate_screen();
+    term::disable_raw_mode();
+    term::show_cursor();
+
+    result
+}
+
+fn parse_args() -> Result<(PathBuf, String), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -50,7 +205,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let command = args[1].as_str();
     if command == "--help" || command == "-h" {
         print!("{}", USAGE);
-        return Ok(());
+        process::exit(0);
     }
 
     let mut dir_arg = "";
@@ -68,121 +223,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let dir = get_directory(dir_arg)?;
-
-    term::enable_raw_mode();
-    term::enter_alternate_screen();
-    term::hide_cursor();
-
-    /* main state */
-    let mut selected_n: usize = 0;
-    let mut mode: usize = 0;
-    let mut sort_stage: usize = 0;
-
-    let mut sortable: Option<HashMap<String, i32>> = None;
-    /* /main state */
-
-    let (w, h) = term::terminal_size();
-
-    let mut b = buffer::Buffer::new(w, h);
-
-    let lm = 2;
-    let rm = 2;
-
-    let menu_h = 6;
-    let menu_mb = 1;
-
-    let menu_items = vec![
-        MenuItem {
-            label: String::from("Sort"),
-            key: "sort",
-        },
-        MenuItem {
-            label: String::from("Duplicates (recursively)"),
-            key: "duplicates",
-        },
-        MenuItem {
-            label: String::from("Exit"),
-            key: "exit",
-        },
-    ];
-
-    loop {
-        let (w, h) = term::terminal_size();
-
-        if w != b.width || h != b.height {
-            b.resize(w, h);
-        }
-
-        b.clear();
-
-        match mode {
-            0 => {
-                let menu_rect = &Rect {
-                    x: lm,
-                    y: h - menu_mb - menu_h,
-                    w: w - lm - rm,
-                    h: menu_h,
-                };
-                ui::draw_menu(&mut b, &menu_rect, "crabsort", &menu_items, selected_n);
-            }
-            1 => {
-                let sort_rect = &Rect {
-                    x: lm,
-                    y: h - menu_mb - 12,
-                    w: w - lm - rm,
-                    h: 12,
-                };
-                ui::draw_box(&mut b, &sort_rect, dir_arg, true);
-
-                if let Some(ref h) = sortable {
-                    let mut i = 0;
-                    for (k, v) in h {
-                        let s = format!("{}: {}", k, v);
-                        b.put_str(sort_rect.x + 3, sort_rect.y + 1 + i, &s, buffer::Color::White, buffer::Color::Reset);
-                        i += 1;
-                    }
-                }
-            }
-            _ => (),
-        }
-
-        print!("{}", b.flush());
-        term::t_flush();
-
-        match read_key() {
-            term::Key::Char('k') => {
-                selected_n = match selected_n > 0 {
-                    true => selected_n - 1,
-                    false => selected_n,
-                };
-            }
-            term::Key::Char('j') => {
-                selected_n = match selected_n < menu_items.len() - 1 {
-                    true => selected_n + 1,
-                    false => selected_n,
-                };
-            }
-            term::Key::Char('q') => break,
-            term::Key::Enter => match mode {
-                0 => match selected_n {
-                    0 => {
-                        sortable = traverse_dir(&dir, true, false).ok();
-                        mode = 1;
-                    }
-                    2 => break,
-                    _ => (),
-                },
-                _ => (),
-            },
-            _ => (),
-        }
-    }
-
-    term::exit_alternate_screen();
-    term::disable_raw_mode();
-    term::show_cursor();
-
-    Ok(())
+    Ok((dir, dir_arg.to_string()))
 }
 
 fn get_directory(s: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
