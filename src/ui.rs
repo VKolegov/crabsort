@@ -39,14 +39,14 @@ pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
         buf.set(min_x, y, '│', border_fg, bg);
         buf.set(max_x, y, '│', border_fg, bg);
     }
-    //
-    // // title
-    // if !title.is_empty() && r.w > 4 {
-    //     let t = format!(" {} ", title);
-    //     let max_len = (r.w - 4) as usize;
-    //     let display: String = t.chars().take(max_len).collect();
-    //     buf.put_str(r.x + 2, r.y, &display, border_fg, bg, true);
-    // }
+
+    // title
+    if !title.is_empty() && r.w > 4 {
+        let t = format!(" {} ", title);
+        let max_len = (r.w - 4) as usize;
+        let display: String = t.chars().take(max_len).collect();
+        buf.put_str(r.x + 3, r.y, &display, border_fg, bg);
+    }
 }
 
 pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
@@ -63,8 +63,8 @@ pub struct MenuItem {
     pub key: &'static str,
 }
 
-pub fn draw_menu(buf: &mut Buffer, r: &Rect, items: &[MenuItem], selected_i: usize) {
-    draw_box(buf, r, "", true);
+pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize) {
+    draw_box(buf, r, title, true);
 
     let rm: usize = 2;
     let lm = 2;
@@ -90,7 +90,7 @@ pub fn draw_menu(buf: &mut Buffer, r: &Rect, items: &[MenuItem], selected_i: usi
             .collect();
         let check = if selected { ">" } else { " " };
 
-        let line = format!("{} {}", check, label);
+        let line = format!(" {} {}", check, label);
 
         let (fg, bg) = if selected {
             (Color::Black, Color::Cyan)
