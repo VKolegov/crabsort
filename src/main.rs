@@ -8,7 +8,7 @@ use crate::{
     file_duplicates::find_duplicates,
     file_types::{detect_file_type, type_dir},
     term::read_key,
-    ui::{MenuItem, Rect},
+    ui::{FileTreeItem, MenuItem, Rect},
 };
 use std::{
     collections::HashMap,
@@ -32,12 +32,16 @@ const MENU_HEIGHT: u16 = 6;
 const MENU_MARGIN_BOTTOM: u16 = 1;
 const SORT_BOX_HEIGHT: u16 = 50;
 
+const FILE_LIST_TOP: u16 = 2;
+const FILE_LIST_GAP: u16 = 2;
+
 struct App {
     dir: PathBuf,
     dir_arg: String,
     selected_n: usize,
     mode: usize,
-    sortable: Option<HashMap<String, Vec<String>>>,
+    sortable: Option<Vec<FileTreeItem>>,
+    dir_files: Vec<FileTreeItem>,
     menu_items: Vec<MenuItem>,
     buffer: buffer::Buffer,
 }
@@ -45,12 +49,14 @@ struct App {
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
         let (w, h) = term::terminal_size();
+        let dir_files = read_dir_files(&dir);
         Self {
             dir,
             dir_arg,
             selected_n: 0,
             mode: 0,
             sortable: None,
+            dir_files,
             menu_items: vec![
                 MenuItem {
                     label: String::from("Sort"),
@@ -100,12 +106,31 @@ impl App {
     }
 
     fn render_menu(&mut self, w: u16, h: u16) {
+        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
         let menu_rect = Rect {
             x: LEFT_MARGIN,
-            y: h - MENU_MARGIN_BOTTOM - MENU_HEIGHT,
+            y: menu_y,
             w: w - LEFT_MARGIN - RIGHT_MARGIN,
             h: MENU_HEIGHT,
         };
+
+        let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+        if file_list_h > 0 {
+            let file_list_rect = Rect {
+                x: LEFT_MARGIN,
+                y: FILE_LIST_TOP,
+                w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                h: file_list_h,
+            };
+            ui::draw_string_list(
+                &mut self.buffer,
+                &file_list_rect,
+                &self.dir_arg,
+                &self.dir_files,
+                1,
+            );
+        }
+
         ui::draw_menu(
             &mut self.buffer,
             &menu_rect,
@@ -122,8 +147,8 @@ impl App {
             w: w - LEFT_MARGIN - RIGHT_MARGIN,
             h: h - MENU_MARGIN_BOTTOM - 2,
         };
-        if let Some(ref h) = self.sortable {
-            ui::draw_string_list(&mut self.buffer, &sort_rect, &self.dir_arg, h);
+        if let Some(ref items) = self.sortable {
+            ui::draw_string_list(&mut self.buffer, &sort_rect, &self.dir_arg, items, 2);
         }
     }
 
@@ -143,7 +168,22 @@ impl App {
             term::Key::Enter => match self.mode {
                 0 => match self.selected_n {
                     0 => {
-                        self.sortable = traverse_dir(&self.dir, true, false).ok();
+                        self.sortable = traverse_dir(&self.dir, true, false)
+                            .ok()
+                            .map(|map| {
+                                map.into_iter()
+                                    .map(|(key, files)| FileTreeItem {
+                                        path: key,
+                                        children: files
+                                            .into_iter()
+                                            .map(|f| FileTreeItem {
+                                                path: f,
+                                                children: Vec::new(),
+                                            })
+                                            .collect(),
+                                    })
+                                    .collect()
+                            });
                         self.mode = 1;
                     }
                     2 => return false,
@@ -227,6 +267,33 @@ fn get_directory(s: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(path)
 }
 
+fn read_dir_files(p: &Path) -> Vec<FileTreeItem> {
+    let Ok(entries) = fs::read_dir(p) else {
+        return Vec::new();
+    };
+
+    let mut items: Vec<FileTreeItem> = Vec::new();
+    for entry in entries {
+        let Ok(e) = entry else { continue };
+        let path = e.path();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        if name.starts_with('.') {
+            continue;
+        }
+
+        items.push(FileTreeItem {
+            path: name,
+            children: Vec::new(),
+        });
+    }
+    items
+}
+
 fn traverse_dir(
     p: &Path,
     dry: bool,
@@ -244,6 +311,11 @@ fn traverse_dir(
         let path = e.path();
 
         if path.is_dir() {
+            continue;
+        }
+
+        let is_dot = path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with('.'));
+        if is_dot {
             continue;
         }
 
@@ -281,7 +353,7 @@ fn traverse_dir(
         files_map
             .entry(full_path_str.to_string())
             .or_default()
-            .push(new_path.display().to_string());
+            .push(path.display().to_string());
 
         if verbose {
             println!("{} -> {}", path.display(), new_path.display());

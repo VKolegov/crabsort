@@ -10,9 +10,7 @@ pub struct Rect {
 impl Rect {
     pub fn new(x: u16, y: u16, w: u16, h: u16) -> Self {
         Self { x, y, w, h }
-    }
-}
-
+    } }
 /// Draw a box border with Unicode box-drawing characters.
 pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
     let border_fg = if focused { Color::Cyan } else { Color::Grey };
@@ -63,31 +61,41 @@ pub struct MenuItem {
     pub key: &'static str,
 }
 
+pub struct FileTreeItem {
+    pub path: String,
+    pub children: Vec<FileTreeItem>,
+}
+
+fn flatten_tree(items: &[FileTreeItem], max_depth: usize, depth: usize, out: &mut Vec<String>) {
+    if depth >= max_depth {
+        return;
+    }
+    let indent = "    ".repeat(depth);
+    for item in items {
+        out.push(format!("{}{}", indent, item.path));
+        flatten_tree(&item.children, max_depth, depth + 1, out);
+    }
+}
+
 pub fn draw_string_list(
     buf: &mut Buffer,
     r: &Rect,
     title: &str,
-    groups: &std::collections::HashMap<String, Vec<String>>,
+    items: &[FileTreeItem],
+    max_display_depth: usize,
 ) {
     draw_box(buf, r, title, true);
 
-    let lm: usize = 2;
-    let rm: usize = 2;
+    let lm: usize = 3;
+    let rm: usize = 3;
     let tm: usize = 1;
     let bm: usize = 2;
 
     let inner_w = (r.w as usize).saturating_sub(lm + rm);
     let inner_h = (r.h as usize).saturating_sub(tm + bm);
 
-    let indent = "    ";
-
     let mut lines: Vec<String> = Vec::new();
-    for (key, file_list) in groups {
-        lines.push(key.clone());
-        for v in file_list {
-            lines.push(format!("{}{}", indent, v));
-        }
-    }
+    flatten_tree(items, max_display_depth, 0, &mut lines);
 
     for i in 0..inner_h {
         if i >= lines.len() {
