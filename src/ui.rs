@@ -63,6 +63,49 @@ pub struct MenuItem {
     pub key: &'static str,
 }
 
+pub fn draw_string_list(
+    buf: &mut Buffer,
+    r: &Rect,
+    title: &str,
+    groups: &std::collections::HashMap<String, Vec<String>>,
+) {
+    draw_box(buf, r, title, true);
+
+    let lm: usize = 2;
+    let rm: usize = 2;
+    let tm: usize = 1;
+    let bm: usize = 2;
+
+    let inner_w = (r.w as usize).saturating_sub(lm + rm);
+    let inner_h = (r.h as usize).saturating_sub(tm + bm);
+
+    let indent = "    ";
+
+    let mut lines: Vec<String> = Vec::new();
+    for (key, file_list) in groups {
+        lines.push(key.clone());
+        for v in file_list {
+            lines.push(format!("{}{}", indent, v));
+        }
+    }
+
+    for i in 0..inner_h {
+        if i >= lines.len() {
+            break;
+        }
+
+        let line: String = lines[i].chars().take(inner_w).collect();
+
+        buf.put_str(
+            r.x + lm as u16,
+            r.y + (tm + i) as u16,
+            &line,
+            Color::White,
+            Color::Reset,
+        );
+    }
+}
+
 pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize) {
     draw_box(buf, r, title, true);
 

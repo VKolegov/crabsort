@@ -30,14 +30,14 @@ const LEFT_MARGIN: u16 = 2;
 const RIGHT_MARGIN: u16 = 2;
 const MENU_HEIGHT: u16 = 6;
 const MENU_MARGIN_BOTTOM: u16 = 1;
-const SORT_BOX_HEIGHT: u16 = 12;
+const SORT_BOX_HEIGHT: u16 = 50;
 
 struct App {
     dir: PathBuf,
     dir_arg: String,
     selected_n: usize,
     mode: usize,
-    sortable: Option<HashMap<String, i32>>,
+    sortable: Option<HashMap<String, Vec<String>>>,
     menu_items: Vec<MenuItem>,
     buffer: buffer::Buffer,
 }
@@ -118,25 +118,12 @@ impl App {
     fn render_sort(&mut self, w: u16, h: u16) {
         let sort_rect = Rect {
             x: LEFT_MARGIN,
-            y: h - MENU_MARGIN_BOTTOM - SORT_BOX_HEIGHT,
+            y: 2,
             w: w - LEFT_MARGIN - RIGHT_MARGIN,
-            h: SORT_BOX_HEIGHT,
+            h: h - MENU_MARGIN_BOTTOM - 2,
         };
-        ui::draw_box(&mut self.buffer, &sort_rect, &self.dir_arg, true);
-
         if let Some(ref h) = self.sortable {
-            let mut i = 0;
-            for (k, v) in h {
-                let s = format!("{}: {}", k, v);
-                self.buffer.put_str(
-                    sort_rect.x + 3,
-                    sort_rect.y + 1 + i,
-                    &s,
-                    buffer::Color::White,
-                    buffer::Color::Reset,
-                );
-                i += 1;
-            }
+            ui::draw_string_list(&mut self.buffer, &sort_rect, &self.dir_arg, h);
         }
     }
 
@@ -244,13 +231,13 @@ fn traverse_dir(
     p: &Path,
     dry: bool,
     verbose: bool,
-) -> Result<HashMap<String, i32>, Box<dyn Error>> {
+) -> Result<HashMap<String, Vec<String>>, Box<dyn Error>> {
     if !p.is_dir() {
         return Err("not a dir".into());
     }
 
     let r_dir = fs::read_dir(p)?;
-    let mut count_map: HashMap<String, i32> = HashMap::new();
+    let mut files_map: HashMap<String, Vec<String>> = HashMap::new();
 
     for entry in r_dir {
         let e = entry?;
@@ -265,12 +252,10 @@ fn traverse_dir(
             Err(e) => {
                 // println!("unsupported file {} : {}", path.display(), e);
 
-                if let Some(current_count) = count_map.get("unsupported") {
-                    count_map.insert("unsupported".to_string(), current_count + 1);
-                } else {
-                    count_map.insert("unsupported".to_string(), 1);
-                }
-
+                files_map
+                    .entry(String::from("unsupported"))
+                    .or_default()
+                    .push(path.display().to_string());
                 continue;
             }
         };
@@ -293,11 +278,10 @@ fn traverse_dir(
 
         let full_path_str = full_path.to_str().ok_or("wrong target dir name")?;
 
-        if let Some(current_count) = count_map.get(full_path_str) {
-            count_map.insert(full_path_str.to_string(), current_count + 1);
-        } else {
-            count_map.insert(full_path_str.to_string(), 1);
-        }
+        files_map
+            .entry(full_path_str.to_string())
+            .or_default()
+            .push(new_path.display().to_string());
 
         if verbose {
             println!("{} -> {}", path.display(), new_path.display());
@@ -326,7 +310,7 @@ fn traverse_dir(
         }
     }
 
-    Ok(count_map)
+    Ok(files_map)
 }
 
 fn ensure_dir(p: &str) -> Result<(), io::Error> {
