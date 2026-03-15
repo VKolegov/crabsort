@@ -2,8 +2,9 @@ mod file_types;
 mod file_duplicates;
 mod term;
 mod buffer;
+mod ui;
 
-use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}, term::read_key};
+use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}, term::read_key, ui::Rect};
 use std::{ collections::HashMap, env,
     error::Error,
     fs::{self},
@@ -52,15 +53,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             b.resize(w, h);
         }
 
+
+        let x = w / 2 - 30 / 2;
+        let y = h / 2 - 10 / 2;
+
         b.clear();
 
-        b.set(10,10,'-', buffer::Color::Green, buffer::Color::Black);
-        b.set(10,11,'-', buffer::Color::Green, buffer::Color::Black);
-        b.set(10,12,'-', buffer::Color::Green, buffer::Color::Black);
-        b.set(11,10,'|', buffer::Color::Yellow, buffer::Color::Black);
-        b.set(12,10,'|', buffer::Color::Yellow, buffer::Color::Black);
-        b.set(13,10,'|', buffer::Color::Yellow, buffer::Color::Black);
-        b.set(14,10,'|', buffer::Color::Yellow, buffer::Color::Black);
+
+        ui::draw_box(&mut b, &Rect{x: x, y: y, w: 30, h: 10}, "", true);
+
 
         print!("{}", b.flush());
         term::t_flush();
