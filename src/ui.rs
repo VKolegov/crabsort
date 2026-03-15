@@ -18,44 +18,27 @@ pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
     let border_fg = if focused { Color::Cyan } else { Color::Grey };
     let bg = Color::Reset;
 
+    let min_x = r.x + 1;
+    let max_x = r.x + r.w - 1;
+    let max_y = r.y + r.h - 1;
 
-    for x in r.x..(r.x + r.w) {
-        if x == r.x {
+    for x in min_x..(max_x + 1) {
+        if x == min_x {
             buf.set(x, r.y, '┌', border_fg, bg);
-            buf.set(x, r.y + r.h - 1, '└', border_fg, bg);
-        } else if x + 1 == r.x + r.w {
+            buf.set(x, max_y, '└', border_fg, bg);
+        } else if x == max_x {
             buf.set(x, r.y, '┐', border_fg, bg);
-            buf.set(x, r.y + r.h - 1, '┘', border_fg, bg);
+            buf.set(x, max_y, '┘', border_fg, bg);
         } else {
             buf.set(x, r.y, '─', border_fg, bg);
-            buf.set(x, r.y + r.h - 1, '─', border_fg, bg);
+            buf.set(x, max_y, '─', border_fg, bg);
         }
     }
 
-    for y in (r.y + 1) ..(r.y + r.h - 1) {
-        buf.set(r.x, y, '│', border_fg, bg);
-        buf.set(r.x + r.w - 1, y, '│', border_fg, bg);
+    for y in (r.y + 1)..max_y {
+        buf.set(min_x, y, '│', border_fg, bg);
+        buf.set(max_x, y, '│', border_fg, bg);
     }
-
-
-    //
-    // // corners
-    // buf.set(r.x, r.y, '┌', border_fg, bg, false);
-    // buf.set(r.x + r.w - 1, r.y, '┐', border_fg, bg, false);
-    // buf.set(r.x, r.y + r.h - 1, '└', border_fg, bg, false);
-    // buf.set(r.x + r.w - 1, r.y + r.h - 1, '┘', border_fg, bg, false);
-    //
-    // // horizontal lines
-    // for x in (r.x + 1)..(r.x + r.w - 1) {
-    //     buf.set(x, r.y, '─', border_fg, bg, false);
-    //     buf.set(x, r.y + r.h - 1, '─', border_fg, bg, false);
-    // }
-    //
-    // // vertical lines
-    // for y in (r.y + 1)..(r.y + r.h - 1) {
-    //     buf.set(r.x, y, '│', border_fg, bg, false);
-    //     buf.set(r.x + r.w - 1, y, '│', border_fg, bg, false);
-    // }
     //
     // // title
     // if !title.is_empty() && r.w > 4 {
@@ -66,3 +49,68 @@ pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
     // }
 }
 
+pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
+    for x in r.x..(r.x + r.w) {
+        buf.set(x, r.y, c, fg, bg);
+    }
+    for y in r.y..(r.y + r.h) {
+        buf.set(r.x, y, c, fg, bg);
+    }
+}
+
+pub struct MenuItem {
+    pub label: String,
+    pub key: &'static str,
+}
+
+pub fn draw_menu(buf: &mut Buffer, r: &Rect, items: &[MenuItem], selected_i: usize) {
+    draw_box(buf, r, "", true);
+
+    let rm: usize = 2;
+    let lm = 2;
+    let tm = 1;
+    let bm: usize = 2;
+
+    let inner_w = (r.w as usize) - rm - lm as usize;
+    let inner_h = (r.h as usize) - tm - bm as usize;
+
+    for i in 0..inner_h {
+        if i >= items.len() {
+            break;
+        }
+
+        let item = &items[i];
+
+        let selected = i == selected_i;
+
+        let label: String = item
+            .label
+            .chars()
+            .take(inner_w.saturating_sub(rm + bm))
+            .collect();
+        let check = if selected { ">" } else { " " };
+
+        let line = format!("{} {}", check, label);
+
+        let (fg, bg) = if selected {
+            (Color::Black, Color::Cyan)
+        } else {
+            (Color::White, Color::Reset)
+        };
+
+        fill_rect(
+            buf,
+            &Rect {
+                x: r.x + (lm as u16),
+                y: r.y + (tm + i) as u16,
+                w: inner_w as u16,
+                h: 1,
+            },
+            ' ',
+            fg,
+            bg,
+        );
+
+        buf.put_str(r.x + (rm as u16), r.y + (tm + i) as u16, &line, fg, bg);
+    }
+}

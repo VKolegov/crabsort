@@ -45,6 +45,12 @@ impl Buffer {
             };
         }
     }
+    
+    pub fn put_str(&mut self, x: u16, y: u16, s: &str, fg: Color, bg: Color) {
+        for (i, ch) in s.chars().enumerate() {
+            self.set(x + i as u16, y, ch, fg, bg);
+        }
+    }
 
     pub fn flush(&mut self) -> String {
         let mut out = String::with_capacity(self.current.len());
@@ -115,8 +121,7 @@ pub enum Color {
     White,
     Black,
     Grey,
-    Blue,
-    Cyan,
+    Blue, Cyan,
     Yellow,
     Green,
 }

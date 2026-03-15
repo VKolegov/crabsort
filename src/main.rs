@@ -1,11 +1,18 @@
-mod file_types;
-mod file_duplicates;
-mod term;
 mod buffer;
+mod file_duplicates;
+mod file_types;
+mod term;
 mod ui;
 
-use crate::{file_duplicates::find_duplicates, file_types::{detect_file_type, type_dir}, term::read_key, ui::Rect};
-use std::{ collections::HashMap, env,
+use crate::{
+    file_duplicates::find_duplicates,
+    file_types::{detect_file_type, type_dir},
+    term::read_key,
+    ui::{MenuItem, Rect},
+};
+use std::{
+    collections::HashMap,
+    env,
     error::Error,
     fs::{self},
     io::{self},
@@ -33,41 +40,77 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-
     term::enable_raw_mode();
     term::enter_alternate_screen();
     term::hide_cursor();
 
-    let (w,h) = term::terminal_size();
+    let mut selected_n: usize = 0;
+
+    let (w, h) = term::terminal_size();
 
     let mut b = buffer::Buffer::new(w, h);
+
+    let lm = 2;
+    let rm = 2;
+
+    let menu_h = 6;
+    let menu_mb = 1;
+
+    let menu_items = vec![
+        MenuItem {
+            label: String::from("Sort"),
+            key: "sort",
+        },
+        MenuItem {
+            label: String::from("Duplicates (recursively)"),
+            key: "duplicates",
+        },
+        MenuItem {
+            label: String::from("Exit"),
+            key: "exit",
+        },
+    ];
 
     loop {
         //
         // print!("\x1b[{};{}H", 5, 5);
         //
         // print!("\x1b[0;34;100m-----\x1b[0m");
-        let (w,h) = term::terminal_size();
+        let (w, h) = term::terminal_size();
 
         if w != b.width || h != b.height {
             b.resize(w, h);
         }
 
-
-        let x = w / 2 - 30 / 2;
-        let y = h / 2 - 10 / 2;
-
         b.clear();
 
+        let menu_rect = &Rect {
+            x: lm,
+            y: h - menu_mb - menu_h,
+            w: w - lm - rm,
+            h: menu_h,
+        };
 
-        ui::draw_box(&mut b, &Rect{x: x, y: y, w: 30, h: 10}, "", true);
+        ui::draw_menu(&mut b, &menu_rect, &menu_items, selected_n);
 
+        // ui::draw_box(&mut b, &menu_rect, "", true);
 
         print!("{}", b.flush());
         term::t_flush();
 
-
         match read_key() {
+            term::Key::Char('k') => {
+                selected_n = match selected_n > 0 {
+                    true => selected_n - 1,
+                    false => selected_n,
+                };
+            }
+            term::Key::Char('j') => {
+                selected_n = match selected_n < 1 {
+                    true => selected_n + 1,
+                    false => selected_n,
+                };
+            }
             term::Key::Char('q') => break,
             term::Key::Enter => break,
             _ => (),
@@ -79,7 +122,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     term::show_cursor();
 
     return Ok(());
-
 
     let args: Vec<String> = env::args().collect();
 
@@ -182,7 +224,6 @@ fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Erro
             }
         };
 
-
         let paths: Option<(PathBuf, PathBuf)> = type_dir(file_type).and_then(|target_dir| {
             let full_path = p.join(target_dir);
             path.file_name()
@@ -206,7 +247,6 @@ fn traverse_dir(p: &Path, dry: &bool, verbose: &bool) -> Result<(), Box<dyn Erro
         } else {
             count_map.insert(full_path_str.to_string(), 1);
         }
-
 
         if *verbose {
             println!("{} -> {}", path.display(), new_path.display());
