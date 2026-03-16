@@ -12,6 +12,7 @@ where
 {
     title: String,
     selected_n: usize,
+    scroll_offset: usize,
 
     items: Vec<FileTreeItem>,
     c: F,
@@ -26,6 +27,7 @@ where
             title,
             items,
             selected_n: 0,
+            scroll_offset: 0,
             c,
         }
     }
@@ -44,6 +46,7 @@ where
             self.title.as_str(),
             &self.items,
             1,
+            self.scroll_offset,
             focused,
         );
     }
@@ -51,13 +54,14 @@ where
     fn handle_input(&mut self, key: Key) {
         match key {
             Key::Char('k') => {
-                if self.selected_n > 0 {
-                    self.selected_n -= 1;
+                if self.scroll_offset > 0 {
+                    self.scroll_offset -= 1;
                 }
             }
             Key::Char('j') => {
-                if self.selected_n < self.items.len() - 1 {
-                    self.selected_n += 1;
+                // TODO: not by items, by actual size
+                if self.scroll_offset < self.items.len() - 1 {
+                    self.scroll_offset += 1;
                 }
             }
             _ => (),

@@ -86,6 +86,7 @@ pub fn draw_string_list(
     title: &str,
     items: &[FileTreeItem],
     max_display_depth: usize,
+    scroll_offset: usize,
     focused: bool,
 ) {
     draw_box(buf, r, title, focused);
@@ -102,11 +103,12 @@ pub fn draw_string_list(
     flatten_tree(items, max_display_depth, 0, &mut lines);
 
     for i in 0..inner_h {
-        if i >= lines.len() {
+        let item_idx = i + scroll_offset;
+        if item_idx >= lines.len() {
             break;
         }
 
-        let line: String = lines[i].chars().take(inner_w).collect();
+        let line: String = lines[item_idx].chars().take(inner_w).collect();
 
         buf.put_str(
             r.x + lm as u16,
