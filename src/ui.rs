@@ -17,7 +17,7 @@ impl Rect {
 }
 /// Draw a box border with Unicode box-drawing characters.
 pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
-    let border_fg = if focused { Color::White } else { Color::Grey };
+    let border_fg = if focused { Color::Yellow } else { Color::Grey };
     let bg = Color::Black;
 
     let min_x = r.x;
@@ -136,7 +136,7 @@ pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], se
         let line = format!(" {} {}", check, label);
 
         let (fg, bg) = if selected && focused {
-            (Color::Black, Color::Cyan)
+            (Color::Black, Color::Yellow)
         } else if selected {
             (Color::Black, Color::Grey)
         } else {
