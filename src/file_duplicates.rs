@@ -10,8 +10,8 @@ use std::{
 
 #[derive(Debug)]
 pub struct FileInfo {
-    path: PathBuf,
-    size: u64,
+    pub path: PathBuf,
+    pub size: u64,
     first_and_last_4kb: [u8; 8192],
 }
 

@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
     process,
     sync::{Arc, Mutex},
-    thread,
+    thread::{self, JoinHandle},
 };
 
 const USAGE: &str = "\
@@ -54,12 +54,14 @@ struct App {
     progress_max: Arc<Mutex<u64>>,
 
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
+    duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
 
     quit: bool,
 }
 
 const MENU_MAIN: &str = "main_menu";
 const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
+const MENU_DUPLICATES: &str = "duplicates_menu";
 
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
@@ -75,6 +77,7 @@ impl App {
             progress_current: Arc::new(Mutex::new(0)),
             progress_max: Arc::new(Mutex::new(0)),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
+            duplicates_thread: None,
             quit: false,
         }
     }
@@ -103,6 +106,7 @@ impl App {
                 break;
             }
 
+            self.check_duplicates_thread();
             self.handle_events();
         }
 
@@ -205,6 +209,26 @@ impl App {
         true
     }
 
+    fn check_duplicates_thread(&mut self) {
+        let finished = self
+            .duplicates_thread
+            .as_ref()
+            .is_some_and(|h| h.is_finished());
+
+        if finished {
+            let handle = self.duplicates_thread.take().unwrap();
+            if let Some(hm) = handle.join().unwrap() {
+                *self.duplicates_map.lock().unwrap() = hm;
+                self.bus.push(MENU_MAIN, "duplicates_ready".to_string());
+            }
+            self.progress_active = false;
+            *self.progress_max.lock().unwrap() = 0;
+            *self.progress_current.lock().unwrap() = 0;
+
+            self.go_to_duplicates_page();
+        }
+    }
+
     fn handle_events(&mut self) {
         for event in &self.bus.drain() {
             match (event.source, event.payload.as_str()) {
@@ -216,19 +240,14 @@ impl App {
                     let counter = self.progress_current.clone();
                     let max = self.progress_max.clone();
 
-                    let duplicates_map = self.duplicates_map.clone();
-
-                    thread::spawn(move || match find_duplicates_async(&p, counter, max) {
-                        Ok(hm) => {
-                            *duplicates_map.lock().unwrap() = hm;
-                        }
-                        Err(_) => (),
-                    });
+                    self.duplicates_thread = Some(thread::spawn(move || {
+                        find_duplicates_async(&p, counter, max).ok()
+                    }));
                 }
-                (MENU_MAIN, "quit") => {
+                (MENU_MAIN, "quit") | (MENU_DUPLICATES, "quit") => {
                     self.quit = true;
                 }
-                (MENU_CONFIRM_SORT, "no") => self.go_to_first_page(),
+                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, "back") => self.go_to_first_page(),
                 _ => {}
             }
         }
@@ -314,6 +333,63 @@ impl App {
 
         menu.add_item("Sort by type".to_string(), "sort_by_type".to_string());
         menu.add_item("Find duplicates".to_string(), "find_duplicates".to_string());
+        menu.add_item("Quit".to_string(), "quit".to_string());
+
+        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+    }
+
+    fn go_to_duplicates_page(&mut self) {
+        let dir_files = self
+            .duplicates_map
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(key, files)| FileTreeItem {
+                path: key.to_string(),
+                children: files
+                    .iter()
+                    .map(|f| FileTreeItem {
+                        path: format!("{} {} kb", f.path.display().to_string(), f.size / 1024),
+                        children: Vec::new(),
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        let dir_list = UIFileList::new(
+            self.dir.display().to_string(),
+            dir_files,
+            2,
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: FILE_LIST_TOP,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: file_list_h,
+                }
+            },
+        );
+
+        let mut menu = UIMenu::new(
+            MENU_DUPLICATES,
+            "Duplicates deletion".to_string(),
+            vec![],
+            self.bus.clone(),
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: menu_y,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: MENU_HEIGHT,
+                }
+            },
+        );
+
+        menu.add_item("Confirm".to_string(), "confirm".to_string());
+        menu.add_item("Back".to_string(), "back".to_string());
         menu.add_item("Quit".to_string(), "quit".to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
