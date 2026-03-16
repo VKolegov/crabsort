@@ -2,6 +2,7 @@ use crate::{
     buffer::{Buffer, Color},
 };
 
+#[derive(Clone)]
 pub struct Rect {
     pub x: u16,
     pub y: u16,
@@ -19,7 +20,7 @@ pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
     let border_fg = if focused { Color::White } else { Color::Grey };
     let bg = Color::Black;
 
-    let min_x = r.x + 1;
+    let min_x = r.x;
     let max_x = r.x + r.w - 1;
     let max_y = r.y + r.h - 1;
 
@@ -51,11 +52,10 @@ pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
 }
 
 pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
-    for x in r.x..(r.x + r.w) {
-        buf.set(x, r.y, c, fg, bg);
-    }
     for y in r.y..(r.y + r.h) {
-        buf.set(r.x, y, c, fg, bg);
+        for x in r.x..(r.x + r.w) {
+            buf.set(x, y, c, fg, bg);
+        }
     }
 }
 
