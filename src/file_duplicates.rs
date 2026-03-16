@@ -15,6 +15,85 @@ pub struct FileInfo {
     first_and_last_4kb: [u8; 8192],
 }
 
+pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>) -> Result<(), Box<dyn Error>> {
+
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1); // fallback на 1
+            
+
+    let mut files_by_sizes = find_same_size_files_recursive_parallel(p, progress.clone(), n_threads)?;
+
+    let mut files_count_for_partial_hash: u64 = 0;
+    let mut files_count_for_full_hash: u64 = 0;
+
+    let duplicate_groups_filtered = &mut files_by_sizes;
+
+    duplicate_groups_filtered.retain(|_key, v| {
+        let l = v.len();
+        if l >= 2 {
+            files_count_for_partial_hash += l as u64;
+            true
+        } else {
+            false
+        }
+    });
+
+
+
+    // step 2 - partial hash
+    *progress.lock().unwrap() = 0;
+    *max.lock().unwrap() = files_count_for_partial_hash;
+    let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+
+    for (_, file_vec) in duplicate_groups_filtered {
+        let mut size_group_partial_hash_map = process_group_partial_hash(file_vec.to_vec(), n_threads);
+        *progress.lock().unwrap() += file_vec.len() as u64;
+
+        // filtering groups within size groups
+        size_group_partial_hash_map.retain(|_k, v| {
+            let l = v.len();
+
+            if l >= 2 {
+                files_count_for_full_hash += l as u64;
+                true
+            } else {
+                false
+            }
+        });
+
+        for (k, v) in size_group_partial_hash_map.iter_mut() {
+            partial_hash_map
+                .entry(k.to_string())
+                .or_default()
+                .extend(v.clone());
+        }
+    }
+
+
+    // step 3 - full hash
+    *progress.lock().unwrap() = 0;
+    *max.lock().unwrap() = files_count_for_full_hash;
+    let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
+    for (_, file_vec) in partial_hash_map {
+        let mut phash_group_full_hash_map = process_group_full_hash(file_vec.clone(), n_threads);
+
+        *progress.lock().unwrap() += file_vec.len() as u64;
+
+        // filtering groups within size groups
+        phash_group_full_hash_map.retain(|_k, v| v.len() >= 2);
+
+        for (k, v) in phash_group_full_hash_map {
+            if full_hash_map.get(&k).is_none() {
+                full_hash_map.insert(k.to_string(), v.to_vec());
+            }
+        }
+    }
+
+
+    Ok(())
+}
+
 pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn Error>> {
     if !p.is_dir() {
         return Ok(());
@@ -24,9 +103,11 @@ pub fn find_duplicates(p: &Path, dry: bool, verbose: bool) -> Result<(), Box<dyn
         .map(|n| n.get())
         .unwrap_or(1); // fallback на 1
 
-    println!("available threads: {}", n_threads);
+    // println!("available threads: {}", n_threads);
 
-    let mut files_by_sizes = find_same_size_files_recursive_parallel(p, n_threads)?;
+    let files_read = Arc::new(Mutex::new(0));
+
+    let mut files_by_sizes = find_same_size_files_recursive_parallel(p, files_read, n_threads)?;
 
     let mut files_count_for_partial_hash: u64 = 0;
     let mut files_count_for_full_hash: u64 = 0;
@@ -306,7 +387,7 @@ pub fn build_dir_flatmap_parallel(
                         dm.push(fi);
                         let mut fr = files_read_clone.lock().unwrap();
                         *fr += 1;
-                        print_progress("files_read", *fr, 0).unwrap();
+                        // print_progress("files_read", *fr, 0).unwrap();
                     }
                 }
             }
@@ -322,9 +403,9 @@ pub fn build_dir_flatmap_parallel(
 
 pub fn find_same_size_files_recursive_parallel(
     p: &Path,
+    files_read: Arc<Mutex<u64>>,
     max_threads: usize,
 ) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
-    let files_read = Arc::new(Mutex::new(0));
     let files = build_dir_flatmap_parallel(p, Arc::clone(&files_read), max_threads);
     println!("");
 

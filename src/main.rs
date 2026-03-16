@@ -8,7 +8,7 @@ mod widgets;
 
 use crate::{
     event_bus::EventBus,
-    file_duplicates::find_duplicates,
+    file_duplicates::{find_duplicates, find_duplicates_async},
     file_types::{detect_file_type, type_dir},
     term::read_key,
     ui::{FileTreeItem, Rect},
@@ -22,6 +22,8 @@ use std::{
     io::{self},
     path::{Path, PathBuf},
     process,
+    sync::{Arc, Mutex},
+    thread,
 };
 
 const USAGE: &str = "\
@@ -49,8 +51,8 @@ struct App {
     bus: EventBus,
 
     progress_active: bool,
-    progress_current: usize,
-    progress_max: usize,
+    progress_current: Arc<Mutex<u64>>,
+    progress_max: Arc<Mutex<u64>>,
 
     quit: bool,
 }
@@ -69,18 +71,14 @@ impl App {
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
             progress_active: false,
-            progress_current: 0,
-            progress_max: 0,
+            progress_current: Arc::new(Mutex::new(0)),
+            progress_max: Arc::new(Mutex::new(0)),
             quit: false,
         }
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
         self.go_to_first_page();
-
-        self.progress_active = false;
-        self.progress_current = 0;
-        self.progress_max = 1000;
 
         loop {
             let (w, h) = term::terminal_size();
@@ -93,7 +91,7 @@ impl App {
             self.render();
 
             if self.progress_active {
-                self.render_progress(self.progress_current, self.progress_max);
+                self.render_progress();
             }
 
             print!("{}", self.buffer.flush());
@@ -109,14 +107,24 @@ impl App {
         Ok(())
     }
 
-    fn render_progress(&mut self, c: usize, m: usize) {
+    fn render_progress(&mut self) {
         let bw = self.buffer.width;
         let bh = self.buffer.height;
 
-        let p = c * (bw - 10) as usize / m;
+        let current_val = *self.progress_current.lock().unwrap();
+        let max_val = *self.progress_max.lock().unwrap();
 
-        let a = "█".repeat(p as usize);
-        let b = format!("{}/{}", self.progress_current, self.progress_max);
+        let mut detail_string = String::from("");
+        let mut progress_line = String::from("");
+
+        if max_val > 0 {
+            let p = current_val * ((bw - 10 - 4) as u64) / max_val;
+
+            progress_line = "█".repeat(p as usize);
+            detail_string = format!("{}/{}", current_val, max_val);
+        } else {
+            detail_string = format!("{}", current_val);
+        }
 
         let h = 7;
         let w = bw - 10;
@@ -128,40 +136,46 @@ impl App {
             h: h,
         };
 
-
         let mut ri = r.clone();
         ri.x += 1;
         ri.y += 1;
         ri.w -= 2;
         ri.h -= 2;
 
-        ui::draw_box(
+        ui::draw_box(&mut self.buffer, &r, "Working...", true);
+        ui::fill_rect(
             &mut self.buffer,
-            &r,
-            "Working...",
-            true,
+            &ri,
+            ' ',
+            buffer::Color::Black,
+            buffer::Color::Black,
         );
-        ui::fill_rect(&mut self.buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
 
         self.buffer.put_str(
             r.x + 2,
             r.y + 2,
-            &b,
+            &detail_string,
             buffer::Color::White,
             buffer::Color::Black,
         );
-        self.buffer.put_str(
-            r.x + 2,
-            r.y + 4,
-            &a,
-            buffer::Color::Yellow,
-            buffer::Color::Yellow,
-        );
+
+        if max_val > 0 {
+            self.buffer.put_str(
+                r.x + 2,
+                r.y + 4,
+                &progress_line,
+                buffer::Color::Yellow,
+                buffer::Color::Yellow,
+            );
+        }
     }
 
     fn render(&mut self) {
         for (i, w) in self.widgets.iter().enumerate() {
-            w.draw(&mut self.buffer, !self.progress_active && i == self.selected_widget);
+            w.draw(
+                &mut self.buffer,
+                !self.progress_active && i == self.selected_widget,
+            );
         }
     }
 
@@ -171,7 +185,7 @@ impl App {
             term::Key::Char('q') => return false,
             term::Key::Char('s') => {
                 self.progress_active = !false;
-            },
+            }
             term::Key::Tab => {
                 if self.selected_widget < self.widgets.len() - 1 {
                     self.selected_widget += 1;
@@ -194,7 +208,20 @@ impl App {
             match (event.source, event.payload.as_str()) {
                 (MENU_MAIN, "sort_by_type") => self.handle_sort_by_type(true),
                 (MENU_MAIN, "find_duplicates") => {
-                    // TODO: implement
+                    self.progress_active = true;
+
+                    let p = self.dir.clone();
+                    let counter = self.progress_current.clone();
+                    let max = self.progress_max.clone();
+
+
+                    let n_threads = std::thread::available_parallelism()
+                        .map(|n| n.get())
+                        .unwrap_or(1); // fallback на 1
+
+                    let a = thread::spawn(move || {
+                        find_duplicates_async(&p, counter, max).ok();
+                    });
                 }
                 (MENU_MAIN, "quit") => {
                     self.quit = true;
