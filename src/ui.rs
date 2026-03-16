@@ -89,6 +89,20 @@ pub fn draw_string_list(
     scroll_offset: usize,
     focused: bool,
 ) {
+    let mut lines: Vec<String> = Vec::new();
+    flatten_tree(items, max_display_depth, 0, &mut lines);
+
+    draw_string_list_flat(buf, r, title, &lines, scroll_offset, focused);
+}
+
+pub fn draw_string_list_flat(
+    buf: &mut Buffer,
+    r: &Rect,
+    title: &str,
+    lines: &Vec<String>,
+    scroll_offset: usize,
+    focused: bool,
+) {
     draw_box(buf, r, title, focused);
 
     let lm: usize = 3;
@@ -98,9 +112,6 @@ pub fn draw_string_list(
 
     let inner_w = (r.w as usize).saturating_sub(lm + rm);
     let inner_h = (r.h as usize).saturating_sub(tm + bm);
-
-    let mut lines: Vec<String> = Vec::new();
-    flatten_tree(items, max_display_depth, 0, &mut lines);
 
     for i in 0..inner_h {
         let item_idx = i + scroll_offset;
@@ -119,6 +130,7 @@ pub fn draw_string_list(
         );
     }
 }
+
 
 pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize, focused: bool) {
     draw_box(buf, r, title, focused);
