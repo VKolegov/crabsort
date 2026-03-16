@@ -339,29 +339,48 @@ impl App {
     }
 
     fn go_to_duplicates_page(&mut self) {
-
         let dm = self.duplicates_map.lock().unwrap();
 
         let mut dir_files = vec![];
 
+        let mut total_size = 0;
+        let mut possible_savings = 0;
+
         let mut i = 1;
         for (_, files) in dm.clone() {
-            let children = files.iter().map(|f| FileTreeItem{
-                path: format!("{} {} kb", f.path.display().to_string(), f.size / 1024),
-                children: Vec::new(),
-            }).collect();
+            for f in &files {
+                total_size += f.size;
+            }
+            possible_savings += files[0].size * (files.len() - 1) as u64; 
 
+            let children = files
+                .iter()
+                .map(|f| FileTreeItem {
+                    path: f.path.display().to_string(),
+                    children: Vec::new(),
+                })
+                .collect();
 
-            dir_files.push(FileTreeItem{
-                path: format!("Group {i}"),
+            dir_files.push(FileTreeItem {
+                path: format!("Group {i} | {} MB", files[0].size / 1024 / 1024),
                 children,
             });
 
             i += 1;
         }
 
-        let dir_list = UIFileList::new(
+        let groups = i - 1;
+
+        let title = format!(
+            "{} | {} groups | {}/{} MB",
             self.dir.display().to_string(),
+            groups,
+            possible_savings / 1024 / 1024,
+            total_size / 1024 / 1024,
+        );
+
+        let dir_list = UIFileList::new(
+            title,
             dir_files,
             2,
             |w: u16, h: u16| {
