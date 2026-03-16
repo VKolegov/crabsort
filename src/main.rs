@@ -8,7 +8,7 @@ mod widgets;
 
 use crate::{
     event_bus::EventBus,
-    file_duplicates::{find_duplicates_async},
+    file_duplicates::{FileInfo, find_duplicates_async},
     file_types::{detect_file_type, type_dir},
     term::read_key,
     ui::{FileTreeItem, Rect},
@@ -53,6 +53,8 @@ struct App {
     progress_current: Arc<Mutex<u64>>,
     progress_max: Arc<Mutex<u64>>,
 
+    duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
+
     quit: bool,
 }
 
@@ -72,6 +74,7 @@ impl App {
             progress_active: false,
             progress_current: Arc::new(Mutex::new(0)),
             progress_max: Arc::new(Mutex::new(0)),
+            duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             quit: false,
         }
     }
@@ -213,8 +216,13 @@ impl App {
                     let counter = self.progress_current.clone();
                     let max = self.progress_max.clone();
 
-                    let _a = thread::spawn(move || {
-                        find_duplicates_async(&p, counter, max).ok();
+                    let duplicates_map = self.duplicates_map.clone();
+
+                    thread::spawn(move || match find_duplicates_async(&p, counter, max) {
+                        Ok(hm) => {
+                            *duplicates_map.lock().unwrap() = hm;
+                        }
+                        Err(_) => (),
                     });
                 }
                 (MENU_MAIN, "quit") => {

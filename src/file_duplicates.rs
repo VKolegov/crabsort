@@ -15,7 +15,7 @@ pub struct FileInfo {
     first_and_last_4kb: [u8; 8192],
 }
 
-pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>) -> Result<(), Box<dyn Error>> {
+pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>) -> Result<HashMap<String, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
 
     let n_threads = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -105,7 +105,7 @@ pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex
     //
     // println!("can save up to: {} kb", size_estimate / 1024);
 
-    Ok(())
+    Ok(full_hash_map)
 }
 
 fn file_hash(path: &Path) -> Result<String, Box<dyn Error>> {
