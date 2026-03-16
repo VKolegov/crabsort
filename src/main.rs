@@ -46,11 +46,11 @@ struct App {
 
     widgets: Vec<Box<dyn Widget>>,
     selected_widget: usize,
-    sortable: Option<Vec<FileTreeItem>>,
     bus: EventBus,
 }
 
-const MAIN_MENU: &str = "main_menu";
+const MENU_MAIN: &str = "main_menu";
+const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
 
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
@@ -60,52 +60,13 @@ impl App {
             dir_arg,
             widgets: vec![],
             selected_widget: 0,
-            sortable: None,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
         }
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let dir_files = read_dir_files(&self.dir);
-
-        let dir_list = UIFileList::new(
-            self.dir.display().to_string(),
-            dir_files,
-            2,
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: FILE_LIST_TOP,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: file_list_h,
-                }
-            },
-        );
-
-        let mut menu = UIMenu::new(
-            MAIN_MENU,
-            "crabsort".to_string(),
-            vec![],
-            self.bus.clone(),
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: menu_y,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: MENU_HEIGHT,
-                }
-            },
-        );
-
-        menu.add_item("Sort by type".to_string(), "sort_by_type".to_string());
-        menu.add_item("Find duplicates".to_string(), "find_duplicates".to_string());
-
-        self.widgets.push(Box::new(menu));
-        self.widgets.push(Box::new(dir_list));
+        self.go_to_first_page();
 
         loop {
             let (w, h) = term::terminal_size();
@@ -117,10 +78,6 @@ impl App {
             self.buffer.clear();
             self.render();
 
-            // if let Some(_) = self.sortable {
-            //     self.buffer
-            //         .put_str(10, 10, "suka", buffer::Color::Yellow, buffer::Color::Grey);
-            // }
             print!("{}", self.buffer.flush());
             term::t_flush();
 
@@ -162,10 +119,14 @@ impl App {
     fn handle_events(&mut self) {
         for event in &self.bus.drain() {
             match (event.source, event.payload.as_str()) {
-                (MAIN_MENU, "sort_by_type") => self.handle_sort_by_type(true),
-                (MAIN_MENU, "find_duplicates") => {
+                (MENU_MAIN, "sort_by_type") => self.handle_sort_by_type(true),
+                (MENU_MAIN, "find_duplicates") => {
                     // TODO: implement
                 }
+                (MENU_MAIN, "quit") => {
+                    // TODO: implement
+                }
+                (MENU_CONFIRM_SORT, "no") => self.go_to_first_page(),
                 _ => {}
             }
         }
@@ -189,11 +150,70 @@ impl App {
                         }
                     },
                 );
+                let mut menu = UIMenu::new(
+                    MENU_CONFIRM_SORT,
+                    "Confirm action".to_string(),
+                    vec![],
+                    self.bus.clone(),
+                    |w: u16, h: u16| {
+                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                        Rect {
+                            x: LEFT_MARGIN,
+                            y: menu_y,
+                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                            h: MENU_HEIGHT,
+                        }
+                    },
+                );
 
-                self.widgets[1] = Box::new(dir_list);
+                menu.add_item("Confirm".to_string(), "yes".to_string());
+                menu.add_item("Cancel".to_string(), "no".to_string());
+
+                self.widgets = vec![Box::new(menu), Box::new(dir_list)];
             }
             Err(_) => (),
         }
+    }
+
+    fn go_to_first_page(&mut self) {
+        let dir_files = read_dir_files(&self.dir);
+
+        let dir_list = UIFileList::new(
+            self.dir.display().to_string(),
+            dir_files,
+            2,
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: FILE_LIST_TOP,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: file_list_h,
+                }
+            },
+        );
+
+        let mut menu = UIMenu::new(
+            MENU_MAIN,
+            "crabsort".to_string(),
+            vec![],
+            self.bus.clone(),
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: menu_y,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: MENU_HEIGHT,
+                }
+            },
+        );
+
+        menu.add_item("Sort by type".to_string(), "sort_by_type".to_string());
+        menu.add_item("Find duplicates".to_string(), "find_duplicates".to_string());
+
+        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
 }
 
