@@ -47,6 +47,7 @@ struct App {
     widgets: Vec<Box<dyn Widget>>,
     selected_widget: usize,
     sortable: Option<Vec<FileTreeItem>>,
+    bus: EventBus,
 }
 
 const MAIN_MENU: &str = "main_menu";
@@ -60,13 +61,12 @@ impl App {
             widgets: vec![],
             selected_widget: 0,
             sortable: None,
+            bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
         }
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let bus = EventBus::new();
-
         let dir_files = read_dir_files(&self.dir);
 
         let dir_list = UIFileList::new(
@@ -89,7 +89,7 @@ impl App {
             MAIN_MENU,
             "crabsort".to_string(),
             vec![],
-            bus.clone(),
+            self.bus.clone(),
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 Rect {
@@ -128,7 +128,7 @@ impl App {
                 break;
             }
 
-            self.handle_events(&bus);
+            self.handle_events();
         }
 
         Ok(())
@@ -159,8 +159,8 @@ impl App {
         true
     }
 
-    fn handle_events(&mut self, bus: &EventBus) {
-        for event in bus.drain() {
+    fn handle_events(&mut self) {
+        for event in &self.bus.drain() {
             match (event.source, event.payload.as_str()) {
                 (MAIN_MENU, "sort_by_type") => self.handle_sort_by_type(true),
                 (MAIN_MENU, "find_duplicates") => {
