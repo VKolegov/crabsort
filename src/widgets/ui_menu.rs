@@ -1,5 +1,6 @@
 use crate::{
     buffer::Buffer,
+    event_bus::EventBus,
     term::Key,
     ui::{MenuItem, Rect, draw_menu},
 };
@@ -10,9 +11,11 @@ pub struct UIMenu<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
+    id: &'static str,
     title: String,
     selected_n: usize,
     items: Vec<MenuItem>,
+    bus: EventBus,
 
     c: F,
 }
@@ -21,20 +24,19 @@ impl<F> UIMenu<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    pub fn new(title: String, items: Vec<MenuItem>, c: F) -> Self {
+    pub fn new(id: &'static str, title: String, items: Vec<MenuItem>, bus: EventBus, c: F) -> Self {
         Self {
+            id,
             title,
             items,
             selected_n: 0,
+            bus,
             c,
         }
     }
 
-    pub fn add_item(&mut self, title: String, action: Box<dyn Fn()>) {
-        self.items.push(MenuItem {
-            label: title,
-            action,
-        });
+    pub fn add_item(&mut self, label: String, event: String) {
+        self.items.push(MenuItem { label, event });
     }
 }
 
@@ -68,7 +70,8 @@ where
                 }
             }
             Key::Enter => {
-                (self.items[self.selected_n].action)();
+                let item = &self.items[self.selected_n];
+                self.bus.push(self.id, item.event.clone());
             }
             _ => (),
         }

@@ -61,7 +61,7 @@ pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
 
 pub struct MenuItem {
     pub label: String,
-    pub action: Box<dyn Fn()>,
+    pub event: String,
 }
 
 pub struct FileTreeItem {
