@@ -3,12 +3,14 @@ mod file_duplicates;
 mod file_types;
 mod term;
 mod ui;
+mod widgets;
 
 use crate::{
     file_duplicates::find_duplicates,
     file_types::{detect_file_type, type_dir},
     term::read_key,
-    ui::{FileTreeItem, MenuItem, Rect},
+    ui::{FileTreeItem, Rect},
+    widgets::{UIFileList, UIMenu, Widget},
 };
 use std::{
     collections::HashMap,
@@ -38,44 +40,73 @@ const FILE_LIST_GAP: u16 = 2;
 struct App {
     dir: PathBuf,
     dir_arg: String,
-    selected_n: usize,
-    mode: usize,
-    sortable: Option<Vec<FileTreeItem>>,
-    dir_files: Vec<FileTreeItem>,
-    menu_items: Vec<MenuItem>,
     buffer: buffer::Buffer,
+
+    widgets: Vec<Box<dyn Widget>>,
+    selected_widget: usize,
 }
 
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
         let (w, h) = term::terminal_size();
-        let dir_files = read_dir_files(&dir);
         Self {
             dir,
             dir_arg,
-            selected_n: 0,
-            mode: 0,
-            sortable: None,
-            dir_files,
-            menu_items: vec![
-                MenuItem {
-                    label: String::from("Sort"),
-                    key: "sort",
-                },
-                MenuItem {
-                    label: String::from("Duplicates (recursively)"),
-                    key: "duplicates",
-                },
-                MenuItem {
-                    label: String::from("Exit"),
-                    key: "exit",
-                },
-            ],
+            widgets: vec![],
+            selected_widget: 0,
             buffer: buffer::Buffer::new(w, h),
         }
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        let dir_files = read_dir_files(&self.dir);
+
+        let dir_list = UIFileList::new(self.dir.display().to_string(), dir_files, |w: u16, h: u16| {
+            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+            let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+            Rect {
+                x: LEFT_MARGIN,
+                y: FILE_LIST_TOP,
+                w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                h: file_list_h,
+            }
+        });
+
+        let mut menu = UIMenu::new("crabsort".to_string(), vec![], |w: u16, h: u16| {
+            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+            Rect {
+                x: LEFT_MARGIN,
+                y: menu_y,
+                w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                h: MENU_HEIGHT,
+            }
+        });
+
+        menu.add_item(
+            "Govno".to_string(),
+            Box::new(|| {
+                // self.sortable = traverse_dir(&self.dir, true, false).ok().map(|map| {
+                //     map.into_iter()
+                //         .map(|(key, files)| FileTreeItem {
+                //             path: key,
+                //             children: files
+                //                 .into_iter()
+                //                 .map(|f| FileTreeItem {
+                //                     path: f,
+                //                     children: Vec::new(),
+                //                 })
+                //                 .collect(),
+                //         })
+                //         .collect()
+                // });
+            }),
+        );
+
+        menu.add_item("Parasha".to_string(), Box::new(|| {}));
+
+        self.widgets.push(Box::new(menu));
+        self.widgets.push(Box::new(dir_list));
+
         loop {
             let (w, h) = term::terminal_size();
 
@@ -84,7 +115,7 @@ impl App {
             }
 
             self.buffer.clear();
-            self.render(w, h);
+            self.render();
 
             print!("{}", self.buffer.flush());
             term::t_flush();
@@ -97,102 +128,40 @@ impl App {
         Ok(())
     }
 
-    fn render(&mut self, w: u16, h: u16) {
-        match self.mode {
-            0 => self.render_menu(w, h),
-            1 => self.render_sort(w, h),
-            _ => (),
+    fn render(&mut self) {
+        for (i,w) in self.widgets.iter().enumerate() {
+            w.draw(&mut self.buffer, i == self.selected_widget);
         }
     }
 
-    fn render_menu(&mut self, w: u16, h: u16) {
-        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-        let menu_rect = Rect {
-            x: LEFT_MARGIN,
-            y: menu_y,
-            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-            h: MENU_HEIGHT,
-        };
-
-        let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-        if file_list_h > 0 {
-            let file_list_rect = Rect {
-                x: LEFT_MARGIN,
-                y: FILE_LIST_TOP,
-                w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                h: file_list_h,
-            };
-            ui::draw_string_list(
-                &mut self.buffer,
-                &file_list_rect,
-                &self.dir_arg,
-                &self.dir_files,
-                1,
-            );
-        }
-
-        ui::draw_menu(
-            &mut self.buffer,
-            &menu_rect,
-            "crabsort",
-            &self.menu_items,
-            self.selected_n,
-        );
-    }
-
-    fn render_sort(&mut self, w: u16, h: u16) {
-        let sort_rect = Rect {
-            x: LEFT_MARGIN,
-            y: 2,
-            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-            h: h - MENU_MARGIN_BOTTOM - 2,
-        };
-        if let Some(ref items) = self.sortable {
-            ui::draw_string_list(&mut self.buffer, &sort_rect, &self.dir_arg, items, 2);
-        }
-    }
+    // fn render_sort(&mut self, w: u16, h: u16) {
+    //     let sort_rect = Rect {
+    //         x: LEFT_MARGIN,
+    //         y: 2,
+    //         w: w - LEFT_MARGIN - RIGHT_MARGIN,
+    //         h: h - MENU_MARGIN_BOTTOM - 2,
+    //     };
+    //     if let Some(ref items) = self.sortable {
+    //         ui::draw_string_list(&mut self.buffer, &sort_rect, &self.dir_arg, items, 2);
+    //     }
+    // }
 
     fn handle_input(&mut self) -> bool {
-        match read_key() {
-            term::Key::Char('k') => {
-                if self.selected_n > 0 {
-                    self.selected_n -= 1;
-                }
-            }
-            term::Key::Char('j') => {
-                if self.selected_n < self.menu_items.len() - 1 {
-                    self.selected_n += 1;
-                }
-            }
+        let k = read_key();
+        match k {
             term::Key::Char('q') => return false,
-            term::Key::Enter => match self.mode {
-                0 => match self.selected_n {
-                    0 => {
-                        self.sortable = traverse_dir(&self.dir, true, false)
-                            .ok()
-                            .map(|map| {
-                                map.into_iter()
-                                    .map(|(key, files)| FileTreeItem {
-                                        path: key,
-                                        children: files
-                                            .into_iter()
-                                            .map(|f| FileTreeItem {
-                                                path: f,
-                                                children: Vec::new(),
-                                            })
-                                            .collect(),
-                                    })
-                                    .collect()
-                            });
-                        self.mode = 1;
-                    }
-                    2 => return false,
-                    _ => (),
-                },
-                _ => (),
-            },
+            term::Key::Tab => {
+                if self.selected_widget < self.widgets.len() - 1 {
+                    self.selected_widget += 1;
+                } else {
+                    self.selected_widget = 0;
+                }
+            }
             _ => (),
         }
+
+        self.widgets[self.selected_widget].handle_input(k);
+
         true
     }
 }
@@ -314,7 +283,10 @@ fn traverse_dir(
             continue;
         }
 
-        let is_dot = path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with('.'));
+        let is_dot = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with('.'));
         if is_dot {
             continue;
         }

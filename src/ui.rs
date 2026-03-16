@@ -1,4 +1,6 @@
-use crate::buffer::{Buffer, Color};
+use crate::{
+    buffer::{Buffer, Color},
+};
 
 pub struct Rect {
     pub x: u16,
@@ -10,11 +12,12 @@ pub struct Rect {
 impl Rect {
     pub fn new(x: u16, y: u16, w: u16, h: u16) -> Self {
         Self { x, y, w, h }
-    } }
+    }
+}
 /// Draw a box border with Unicode box-drawing characters.
 pub fn draw_box(buf: &mut Buffer, r: &Rect, title: &str, focused: bool) {
-    let border_fg = if focused { Color::Cyan } else { Color::Grey };
-    let bg = Color::Reset;
+    let border_fg = if focused { Color::White } else { Color::Grey };
+    let bg = Color::Black;
 
     let min_x = r.x + 1;
     let max_x = r.x + r.w - 1;
@@ -58,7 +61,7 @@ pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
 
 pub struct MenuItem {
     pub label: String,
-    pub key: &'static str,
+    pub action: Box<dyn Fn()>,
 }
 
 pub struct FileTreeItem {
@@ -83,8 +86,9 @@ pub fn draw_string_list(
     title: &str,
     items: &[FileTreeItem],
     max_display_depth: usize,
+    focused: bool,
 ) {
-    draw_box(buf, r, title, true);
+    draw_box(buf, r, title, focused);
 
     let lm: usize = 3;
     let rm: usize = 3;
@@ -114,8 +118,8 @@ pub fn draw_string_list(
     }
 }
 
-pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize) {
-    draw_box(buf, r, title, true);
+pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize, focused: bool) {
+    draw_box(buf, r, title, focused);
 
     let rm: usize = 2;
     let lm = 2;
@@ -143,8 +147,10 @@ pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], se
 
         let line = format!(" {} {}", check, label);
 
-        let (fg, bg) = if selected {
+        let (fg, bg) = if selected && focused {
             (Color::Black, Color::Cyan)
+        } else if selected {
+            (Color::Black, Color::Grey)
         } else {
             (Color::White, Color::Reset)
         };
