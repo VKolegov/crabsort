@@ -140,7 +140,6 @@ impl App {
         }
     }
 
-
     fn handle_input(&mut self) -> bool {
         let k = read_key();
         match k {
@@ -163,49 +162,37 @@ impl App {
     fn handle_events(&mut self, bus: &EventBus) {
         for event in bus.drain() {
             match (event.source, event.payload.as_str()) {
-                (MAIN_MENU, "sort_by_type") => {
-                    let sortable = traverse_dir(&self.dir, true, false).ok().map(|map| {
-                        map.into_iter()
-                            .map(|(key, files)| FileTreeItem {
-                                path: key,
-                                children: files
-                                    .into_iter()
-                                    .map(|f| FileTreeItem {
-                                        path: f,
-                                        children: Vec::new(),
-                                    })
-                                    .collect(),
-                            })
-                            .collect()
-                    });
-
-                    if let Some(files) = sortable {
-
-                                let dir_list = UIFileList::new(
-                                    self.dir.display().to_string(),
-                                    files,
-                                    2,
-                                    |w: u16, h: u16| {
-                                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                                        let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                                        Rect {
-                                            x: LEFT_MARGIN,
-                                            y: FILE_LIST_TOP,
-                                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                                            h: file_list_h,
-                                        }
-                                    },
-                                );
-
-
-                        self.widgets[1] = Box::new(dir_list);
-                    }
-                }
+                (MAIN_MENU, "sort_by_type") => self.handle_sort_by_type(true),
                 (MAIN_MENU, "find_duplicates") => {
                     // TODO: implement
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn handle_sort_by_type(&mut self, dry: bool) {
+        match fix_duplicates_in_dir(&self.dir, dry) {
+            Ok(files) => {
+                let dir_list = UIFileList::new(
+                    self.dir.display().to_string(),
+                    files,
+                    2,
+                    |w: u16, h: u16| {
+                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                        let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                        Rect {
+                            x: LEFT_MARGIN,
+                            y: FILE_LIST_TOP,
+                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                            h: file_list_h,
+                        }
+                    },
+                );
+
+                self.widgets[1] = Box::new(dir_list);
+            }
+            Err(_) => (),
         }
     }
 }
@@ -305,6 +292,23 @@ fn read_dir_files(p: &Path) -> Vec<FileTreeItem> {
         });
     }
     items
+}
+
+fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<FileTreeItem>, Box<dyn Error>> {
+    traverse_dir(p, dry, false).map(|map| {
+        map.into_iter()
+            .map(|(key, files)| FileTreeItem {
+                path: key,
+                children: files
+                    .into_iter()
+                    .map(|f| FileTreeItem {
+                        path: f,
+                        children: Vec::new(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    })
 }
 
 fn traverse_dir(
