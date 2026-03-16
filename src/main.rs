@@ -47,6 +47,9 @@ struct App {
     widgets: Vec<Box<dyn Widget>>,
     selected_widget: usize,
     bus: EventBus,
+
+
+    quit: bool,
 }
 
 const MENU_MAIN: &str = "main_menu";
@@ -62,6 +65,7 @@ impl App {
             selected_widget: 0,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
+            quit: false,
         }
     }
 
@@ -81,7 +85,7 @@ impl App {
             print!("{}", self.buffer.flush());
             term::t_flush();
 
-            if !self.handle_input() {
+            if self.quit || !self.handle_input() {
                 break;
             }
 
@@ -124,7 +128,7 @@ impl App {
                     // TODO: implement
                 }
                 (MENU_MAIN, "quit") => {
-                    // TODO: implement
+                    self.quit = true;
                 }
                 (MENU_CONFIRM_SORT, "no") => self.go_to_first_page(),
                 _ => {}
@@ -212,6 +216,7 @@ impl App {
 
         menu.add_item("Sort by type".to_string(), "sort_by_type".to_string());
         menu.add_item("Find duplicates".to_string(), "find_duplicates".to_string());
+        menu.add_item("Quit".to_string(), "quit".to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
