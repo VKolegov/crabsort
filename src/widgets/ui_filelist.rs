@@ -1,7 +1,7 @@
 use crate::{
     buffer::Buffer,
     term::Key,
-    ui::{FileTreeItem, Rect, draw_string_list, draw_string_list_flat},
+    ui::{FileTreeItem, Rect, draw_string_list_flat},
 };
 
 use super::widget::Widget;

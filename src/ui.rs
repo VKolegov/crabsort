@@ -69,32 +69,6 @@ pub struct FileTreeItem {
     pub children: Vec<FileTreeItem>,
 }
 
-fn flatten_tree(items: &[FileTreeItem], max_depth: usize, depth: usize, out: &mut Vec<String>) {
-    if depth >= max_depth {
-        return;
-    }
-    let indent = "    ".repeat(depth);
-    for item in items {
-        out.push(format!("{}{}", indent, item.path));
-        flatten_tree(&item.children, max_depth, depth + 1, out);
-    }
-}
-
-pub fn draw_string_list(
-    buf: &mut Buffer,
-    r: &Rect,
-    title: &str,
-    items: &[FileTreeItem],
-    max_display_depth: usize,
-    scroll_offset: usize,
-    focused: bool,
-) {
-    let mut lines: Vec<String> = Vec::new();
-    flatten_tree(items, max_display_depth, 0, &mut lines);
-
-    draw_string_list_flat(buf, r, title, &lines, scroll_offset, focused);
-}
-
 pub fn draw_string_list_flat(
     buf: &mut Buffer,
     r: &Rect,

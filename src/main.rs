@@ -8,7 +8,7 @@ mod widgets;
 
 use crate::{
     event_bus::EventBus,
-    file_duplicates::{find_duplicates, find_duplicates_async},
+    file_duplicates::{find_duplicates_async},
     file_types::{detect_file_type, type_dir},
     term::read_key,
     ui::{FileTreeItem, Rect},
@@ -36,7 +36,6 @@ const LEFT_MARGIN: u16 = 2;
 const RIGHT_MARGIN: u16 = 2;
 const MENU_HEIGHT: u16 = 6;
 const MENU_MARGIN_BOTTOM: u16 = 1;
-const SORT_BOX_HEIGHT: u16 = 50;
 
 const FILE_LIST_TOP: u16 = 2;
 const FILE_LIST_GAP: u16 = 2;
@@ -114,7 +113,7 @@ impl App {
         let current_val = *self.progress_current.lock().unwrap();
         let max_val = *self.progress_max.lock().unwrap();
 
-        let mut detail_string = String::from("");
+        let detail_string;
         let mut progress_line = String::from("");
 
         if max_val > 0 {
@@ -214,12 +213,7 @@ impl App {
                     let counter = self.progress_current.clone();
                     let max = self.progress_max.clone();
 
-
-                    let n_threads = std::thread::available_parallelism()
-                        .map(|n| n.get())
-                        .unwrap_or(1); // fallback на 1
-
-                    let a = thread::spawn(move || {
+                    let _a = thread::spawn(move || {
                         find_duplicates_async(&p, counter, max).ok();
                     });
                 }
