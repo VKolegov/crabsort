@@ -1,4 +1,5 @@
 mod buffer;
+mod event_bus;
 mod file_duplicates;
 mod file_types;
 mod term;
