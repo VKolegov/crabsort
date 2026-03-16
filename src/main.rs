@@ -48,6 +48,9 @@ struct App {
     selected_widget: usize,
     bus: EventBus,
 
+    progress_active: bool,
+    progress_current: usize,
+    progress_max: usize,
 
     quit: bool,
 }
@@ -65,12 +68,19 @@ impl App {
             selected_widget: 0,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
+            progress_active: false,
+            progress_current: 0,
+            progress_max: 0,
             quit: false,
         }
     }
 
     fn run(&mut self) -> Result<(), Box<dyn Error>> {
         self.go_to_first_page();
+
+        self.progress_active = false;
+        self.progress_current = 0;
+        self.progress_max = 1000;
 
         loop {
             let (w, h) = term::terminal_size();
@@ -81,6 +91,10 @@ impl App {
 
             self.buffer.clear();
             self.render();
+
+            if self.progress_active {
+                self.render_progress(self.progress_current, self.progress_max);
+            }
 
             print!("{}", self.buffer.flush());
             term::t_flush();
@@ -95,9 +109,59 @@ impl App {
         Ok(())
     }
 
+    fn render_progress(&mut self, c: usize, m: usize) {
+        let bw = self.buffer.width;
+        let bh = self.buffer.height;
+
+        let p = c * (bw - 10) as usize / m;
+
+        let a = "█".repeat(p as usize);
+        let b = format!("{}/{}", self.progress_current, self.progress_max);
+
+        let h = 7;
+        let w = bw - 10;
+
+        let r = Rect {
+            x: bw / 2 - w / 2,
+            y: bh / 2 - h / 2,
+            w: w,
+            h: h,
+        };
+
+
+        let mut ri = r.clone();
+        ri.x += 1;
+        ri.y += 1;
+        ri.w -= 2;
+        ri.h -= 2;
+
+        ui::draw_box(
+            &mut self.buffer,
+            &r,
+            "Working...",
+            true,
+        );
+        ui::fill_rect(&mut self.buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
+
+        self.buffer.put_str(
+            r.x + 2,
+            r.y + 2,
+            &b,
+            buffer::Color::White,
+            buffer::Color::Black,
+        );
+        self.buffer.put_str(
+            r.x + 2,
+            r.y + 4,
+            &a,
+            buffer::Color::Yellow,
+            buffer::Color::Yellow,
+        );
+    }
+
     fn render(&mut self) {
         for (i, w) in self.widgets.iter().enumerate() {
-            w.draw(&mut self.buffer, i == self.selected_widget);
+            w.draw(&mut self.buffer, !self.progress_active && i == self.selected_widget);
         }
     }
 
@@ -105,6 +169,9 @@ impl App {
         let k = read_key();
         match k {
             term::Key::Char('q') => return false,
+            term::Key::Char('s') => {
+                self.progress_active = !false;
+            },
             term::Key::Tab => {
                 if self.selected_widget < self.widgets.len() - 1 {
                     self.selected_widget += 1;
@@ -115,7 +182,9 @@ impl App {
             _ => (),
         }
 
-        self.widgets[self.selected_widget].handle_input(k);
+        if !self.progress_active {
+            self.widgets[self.selected_widget].handle_input(k);
+        }
 
         true
     }
