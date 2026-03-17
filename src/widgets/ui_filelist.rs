@@ -17,7 +17,9 @@ where
 
     items: Vec<FileTreeItem>,
     lines: Vec<String>,
-    c: F,
+
+    r: Rect,
+    layout_cb: F,
 }
 
 impl<F> UIFileList<F>
@@ -36,7 +38,8 @@ where
             max_depth,
             scroll_offset: 0,
             lines,
-            c,
+            r: Rect::new(0,0,0,0),
+            layout_cb: c,
         }
     }
 
@@ -52,12 +55,16 @@ impl<F> Widget for UIFileList<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    fn draw(&self, buffer: &mut Buffer, focused: bool) {
-        let r = (self.c)(buffer.width, buffer.height);
-
+    fn handle_buf_size_change(&mut self, w: u16, h: u16) {
+        self.r = (self.layout_cb)(w,h);
+    }
+    fn draw(&mut self, buffer: &mut Buffer, focused: bool) {
+        if self.r.h == 0 || self.r.w == 0 {
+            self.handle_buf_size_change(buffer.width, buffer.height);
+        }
         draw_string_list_flat(
             buffer,
-            &r,
+            &self.r,
             self.title.as_str(),
             &self.lines,
             self.scroll_offset,

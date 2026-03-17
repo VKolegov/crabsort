@@ -75,14 +75,13 @@ const INPUT_DIALOG: &str = "input_test";
 
 impl App {
     fn new(dir: PathBuf) -> Self {
-        let (w, h) = term::terminal_size();
         Self {
             dir,
             widgets: vec![],
             selected_widget: 0,
             important_widget: None,
             bus: EventBus::new(),
-            buffer: buffer::Buffer::new(w, h),
+            buffer: buffer::Buffer::new(0, 0),
             progress_current: Arc::new(Mutex::new(0)),
             progress_max: Arc::new(Mutex::new(0)),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
@@ -100,6 +99,7 @@ impl App {
 
             if w != self.buffer.width || h != self.buffer.height {
                 self.buffer.resize(w, h);
+                self.handle_resize(w, h);
             }
 
             self.buffer.clear();
@@ -119,14 +119,20 @@ impl App {
         Ok(())
     }
 
+    fn handle_resize(&mut self, w: u16, h: u16) {
+        for widget in self.widgets.iter_mut() {
+            widget.handle_buf_size_change(w, h);
+        }
+    }
+
     fn render(&mut self) {
-        for (i, w) in self.widgets.iter().enumerate() {
+        for (i, w) in self.widgets.iter_mut().enumerate() {
             w.draw(
                 &mut self.buffer,
                 self.important_widget.is_none() && i == self.selected_widget,
             );
         }
-        if let Some(w) = &self.important_widget {
+        if let Some(w) = self.important_widget.as_mut() {
             w.draw(&mut self.buffer, true);
         }
     }

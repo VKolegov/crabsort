@@ -17,7 +17,8 @@ where
 
     input: String,
 
-    c: F,
+    r: Rect,
+    layout_cb: F,
 }
 
 impl<F> UIInputDialog<F>
@@ -30,7 +31,8 @@ where
             title,
             bus,
             input: String::new(),
-            c,
+            r: Rect::new(0, 0, 0, 0),
+            layout_cb: c,
         }
     }
 }
@@ -39,15 +41,17 @@ impl<F> Widget for UIInputDialog<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    fn draw(&self, buffer: &mut Buffer, focused: bool) {
-        let r = (self.c)(buffer.width, buffer.height);
+    fn handle_buf_size_change(&mut self, w: u16, h: u16) {
+        self.r = (self.layout_cb)(w, h);
+    }
+    fn draw(&mut self, buffer: &mut Buffer, focused: bool) {
+        if self.r.h == 0 || self.r.w == 0 {
+            self.handle_buf_size_change(buffer.width, buffer.height);
+        }
+        let r = &self.r;
+        draw_box(buffer, r, &self.title, focused);
 
-        draw_box(buffer, &r, &self.title, focused);
-        let mut ri = r.clone();
-        ri.x += 1;
-        ri.y += 1;
-        ri.w -= 2;
-        ri.h -= 2;
+        let ri = Rect::new(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
         fill_rect(
             buffer,
             &ri,
@@ -56,7 +60,13 @@ where
             crate::buffer::Color::Black,
         );
 
-        buffer.put_str(r.x+2, r.y+2, &self.input, crate::buffer::Color::White, crate::buffer::Color::Black);
+        buffer.put_str(
+            r.x + 2,
+            r.y + 2,
+            &self.input,
+            crate::buffer::Color::White,
+            crate::buffer::Color::Black,
+        );
     }
 
     fn handle_input(&mut self, key: Key) {
@@ -66,13 +76,13 @@ where
             }
             Key::Enter => {
                 self.bus.push(self.id, self.input.clone());
-            },
+            }
             Key::Char(c) => {
                 self.input.push(c);
-            },
+            }
             Key::Backspace => {
                 self.input.pop();
-            },
+            }
             _ => (),
         }
     }
