@@ -1,0 +1,92 @@
+use std::sync::{Arc, Mutex};
+
+use crate::{
+    buffer::{self, Buffer},
+    term::Key,
+    ui::{Rect, draw_box, fill_rect},
+};
+
+use super::widget::Widget;
+
+pub struct UIProgressBar<F>
+where
+    F: Fn(u16, u16) -> Rect,
+{
+    title: String,
+    current: Arc<Mutex<u64>>,
+    max: Arc<Mutex<u64>>,
+    c: F,
+}
+
+impl<F> UIProgressBar<F>
+where
+    F: Fn(u16, u16) -> Rect,
+{
+    pub fn new(title: String, current: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>, c: F) -> Self {
+        Self {
+            title,
+            current,
+            max,
+            c,
+        }
+    }
+}
+
+impl<F> Widget for UIProgressBar<F>
+where
+    F: Fn(u16, u16) -> Rect,
+{
+    fn draw(&self, buffer: &mut Buffer, focused: bool) {
+        let r = (self.c)(buffer.width, buffer.height);
+
+        let current_val = *self.current.lock().unwrap();
+        let max_val = *self.max.lock().unwrap();
+
+        let detail_string;
+        let mut progress_line = String::new();
+
+        if max_val > 0 {
+            let bar_width = r.w.saturating_sub(4) as u64;
+            let p = current_val * bar_width / max_val;
+            progress_line = "█".repeat(p as usize);
+            detail_string = format!("{}/{}", current_val, max_val);
+        } else {
+            detail_string = format!("{}", current_val);
+        }
+
+        let mut ri = r.clone();
+        ri.x += 1;
+        ri.y += 1;
+        ri.w -= 2;
+        ri.h -= 2;
+
+        draw_box(buffer, &r, &self.title, focused);
+        fill_rect(
+            buffer,
+            &ri,
+            ' ',
+            buffer::Color::Black,
+            buffer::Color::Black,
+        );
+
+        buffer.put_str(
+            r.x + 2,
+            r.y + 2,
+            &detail_string,
+            buffer::Color::White,
+            buffer::Color::Black,
+        );
+
+        if max_val > 0 {
+            buffer.put_str(
+                r.x + 2,
+                r.y + 4,
+                &progress_line,
+                buffer::Color::Yellow,
+                buffer::Color::Yellow,
+            );
+        }
+    }
+
+    fn handle_input(&mut self, _key: Key) {}
+}

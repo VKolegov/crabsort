@@ -8,7 +8,7 @@ mod ui;
 mod widgets;
 
 use crate::{
-    event_bus::EventBus, file_duplicates::{FileInfo, find_duplicates_async}, file_sorting::fix_duplicates_in_dir, term::read_key, ui::{FileTreeItem, Rect}, widgets::{UIFileList, UIInputDialog, UIMenu, Widget}
+    event_bus::EventBus, file_duplicates::{FileInfo, find_duplicates_async}, file_sorting::fix_duplicates_in_dir, term::read_key, ui::{FileTreeItem, Rect}, widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget}
 };
 use std::{
     collections::HashMap,
@@ -44,7 +44,6 @@ struct App {
     selected_widget: usize,
     bus: EventBus,
 
-    progress_active: bool,
     progress_current: Arc<Mutex<u64>>,
     progress_max: Arc<Mutex<u64>>,
 
@@ -82,7 +81,6 @@ impl App {
             important_widget: None,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
-            progress_active: false,
             progress_current: Arc::new(Mutex::new(0)),
             progress_max: Arc::new(Mutex::new(0)),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
@@ -124,80 +122,12 @@ impl App {
         Ok(())
     }
 
-    fn render_progress(&mut self) {
-        let bw = self.buffer.width;
-        let bh = self.buffer.height;
-
-        let current_val = *self.progress_current.lock().unwrap();
-        let max_val = *self.progress_max.lock().unwrap();
-
-        let detail_string;
-        let mut progress_line = String::from("");
-
-        if max_val > 0 {
-            let p = current_val * ((bw - 10 - 4) as u64) / max_val;
-
-            progress_line = "█".repeat(p as usize);
-            detail_string = format!("{}/{}", current_val, max_val);
-        } else {
-            detail_string = format!("{}", current_val);
-        }
-
-        let h = 7;
-        let w = bw - 10;
-
-        let r = Rect {
-            x: bw / 2 - w / 2,
-            y: bh / 2 - h / 2,
-            w: w,
-            h: h,
-        };
-
-        let mut ri = r.clone();
-        ri.x += 1;
-        ri.y += 1;
-        ri.w -= 2;
-        ri.h -= 2;
-
-        ui::draw_box(&mut self.buffer, &r, "Working...", true);
-        ui::fill_rect(
-            &mut self.buffer,
-            &ri,
-            ' ',
-            buffer::Color::Black,
-            buffer::Color::Black,
-        );
-
-        self.buffer.put_str(
-            r.x + 2,
-            r.y + 2,
-            &detail_string,
-            buffer::Color::White,
-            buffer::Color::Black,
-        );
-
-        if max_val > 0 {
-            self.buffer.put_str(
-                r.x + 2,
-                r.y + 4,
-                &progress_line,
-                buffer::Color::Yellow,
-                buffer::Color::Yellow,
-            );
-        }
-    }
-
     fn render(&mut self) {
         for (i, w) in self.widgets.iter().enumerate() {
             w.draw(
                 &mut self.buffer,
-                !self.progress_active
-                    && self.important_widget.is_none()
-                    && i == self.selected_widget,
+                self.important_widget.is_none() && i == self.selected_widget,
             );
-        }
-        if self.progress_active {
-            self.render_progress();
         }
         if let Some(w) = &self.important_widget {
             w.draw(&mut self.buffer, true);
@@ -226,9 +156,7 @@ impl App {
             _ => (),
         }
 
-        if !self.progress_active {
-            self.widgets[self.selected_widget].handle_input(k);
-        }
+        self.widgets[self.selected_widget].handle_input(k);
 
         true
     }
@@ -245,7 +173,7 @@ impl App {
                 *self.duplicates_map.lock().unwrap() = hm;
                 self.bus.push(MENU_MAIN, "duplicates_ready".to_string());
             }
-            self.progress_active = false;
+            self.important_widget = None;
             *self.progress_max.lock().unwrap() = 0;
             *self.progress_current.lock().unwrap() = 0;
 
@@ -268,7 +196,22 @@ impl App {
                     self.show_input_dialogue("Input min size (in kilobytes)".into());
                 }
                 (MENU_MAIN, ACTION_FIND_DUPLICATES) => {
-                    self.progress_active = true;
+                    let progress_bar = UIProgressBar::new(
+                        "Working...".to_string(),
+                        self.progress_current.clone(),
+                        self.progress_max.clone(),
+                        |bw: u16, bh: u16| {
+                            let h = 7;
+                            let w = bw - 10;
+                            Rect {
+                                x: bw / 2 - w / 2,
+                                y: bh / 2 - h / 2,
+                                w,
+                                h,
+                            }
+                        },
+                    );
+                    self.important_widget = Some(Box::new(progress_bar));
 
                     let p = self.dir.clone();
                     let counter = self.progress_current.clone();
