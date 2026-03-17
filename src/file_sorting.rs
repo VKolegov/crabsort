@@ -1,4 +1,10 @@
-use std::{collections::HashMap, error::Error, fs, io, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use crate::{file_types::{detect_file_type, type_dir}, ui::FileTreeItem};
 
@@ -19,11 +25,57 @@ pub fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<FileTreeItem>, B
     })
 }
 
-fn traverse_dir(
-    p: &Path,
-    dry: bool,
-    verbose: bool,
-) -> Result<HashMap<String, Vec<String>>, Box<dyn Error>> {
+/// Move files using pre-collected plan. No dir traversal.
+pub fn move_files_with_progress(
+    plan: Vec<FileTreeItem>,
+    progress: Arc<Mutex<u64>>,
+    max: Arc<Mutex<u64>>,
+    description: Arc<Mutex<String>>,
+) -> Result<Vec<FileTreeItem>, Box<dyn Error>> {
+    let total: u64 = plan
+        .iter()
+        .filter(|item| item.path != "unsupported")
+        .map(|item| item.children.len() as u64)
+        .sum();
+    *max.lock().unwrap() = total;
+    *progress.lock().unwrap() = 0;
+
+    for item in &plan {
+        if item.path == "unsupported" {
+            continue;
+        }
+        let target_dir = &item.path;
+        ensure_dir(target_dir)?;
+
+        for child in &item.children {
+            let source = PathBuf::from(&child.path);
+            let filename = source
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let new_path = Path::new(target_dir).join(filename);
+
+            *description.lock().unwrap() = child.path.clone();
+
+            if let Err(e) = fs::copy(&source, &new_path) {
+                eprintln!(
+                    "Failed to copy {} -> {}: {}",
+                    source.display(),
+                    new_path.display(),
+                    e
+                );
+            } else if let Err(e) = fs::remove_file(&source) {
+                eprintln!("Failed to remove {}: {}", source.display(), e);
+            }
+
+            *progress.lock().unwrap() += 1;
+        }
+    }
+
+    Ok(plan)
+}
+
+fn traverse_dir(p: &Path, dry: bool, verbose: bool) -> Result<HashMap<String, Vec<String>>, Box<dyn Error>> {
     if !p.is_dir() {
         return Err("not a dir".into());
     }
@@ -49,9 +101,7 @@ fn traverse_dir(
 
         let file_type = match detect_file_type(&path) {
             Ok(ft) => ft,
-            Err(e) => {
-                // println!("unsupported file {} : {}", path.display(), e);
-
+            Err(_) => {
                 files_map
                     .entry(String::from("unsupported"))
                     .or_default()
@@ -88,9 +138,6 @@ fn traverse_dir(
         }
 
         if dry {
-            if verbose {
-                println!("dry run - skip");
-            }
             continue;
         }
 

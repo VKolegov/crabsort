@@ -10,7 +10,7 @@ mod widgets;
 use crate::{
     event_bus::EventBus,
     file_duplicates::{FileInfo, find_duplicates_async},
-    file_sorting::fix_duplicates_in_dir,
+    file_sorting::{fix_duplicates_in_dir, move_files_with_progress},
     term::read_key,
     ui::{FileTreeItem, Rect},
     widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget},
@@ -56,6 +56,8 @@ struct App {
 
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
+    sort_thread: Option<JoinHandle<Option<Vec<FileTreeItem>>>>,
+    pending_sort: Option<Vec<FileTreeItem>>,
 
     quit: bool,
 }
@@ -87,6 +89,8 @@ impl App {
             progress_max: Arc::new(Mutex::new(0)),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             duplicates_thread: None,
+            sort_thread: None,
+            pending_sort: None,
             latest_input: None,
             quit: false,
         }
@@ -114,6 +118,7 @@ impl App {
             }
 
             self.check_duplicates_thread();
+            self.check_sort_thread();
             self.handle_events();
         }
 
@@ -184,6 +189,25 @@ impl App {
         }
     }
 
+    fn check_sort_thread(&mut self) {
+        let finished = self
+            .sort_thread
+            .as_ref()
+            .is_some_and(|h| h.is_finished());
+
+        if finished {
+            let handle = self.sort_thread.take().unwrap();
+            if let Some(files) = handle.join().unwrap() {
+                self.go_to_sort_success_page(files);
+            } else {
+                self.go_to_first_page();
+            }
+            self.important_widget = None;
+            *self.progress_max.lock().unwrap() = 0;
+            *self.progress_current.lock().unwrap() = 0;
+        }
+    }
+
     fn handle_events(&mut self) {
         for event in &self.bus.drain() {
             if event.payload == ACTION_QUIT {
@@ -200,6 +224,7 @@ impl App {
                 }
                 (MENU_CONFIRM_SORT, ACTION_CONFIRM) => self.handle_confirm_sort(),
                 (MENU_CONFIRM_SORT, "no") | (MENU_SORT_SUCCESS, ACTION_BACK) | (MENU_DUPLICATES, ACTION_BACK) => {
+                    self.pending_sort = None;
                     self.go_to_first_page()
                 }
                 _ => {}
@@ -224,15 +249,46 @@ impl App {
     }
 
     fn handle_confirm_sort(&mut self) {
-        match fix_duplicates_in_dir(&self.dir, false) {
-            Ok(files) => self.go_to_sort_success_page(files),
-            Err(_) => self.go_to_first_page(),
-        }
+        let Some(plan) = self.pending_sort.take() else {
+            self.go_to_first_page();
+            return;
+        };
+
+        let desc = Arc::new(Mutex::new("Moving files...".to_string()));
+        let progress_desc = Arc::new(Mutex::new(String::new()));
+
+        let progress_bar = UIProgressBar::new(
+            desc.clone(),
+            Some(progress_desc.clone()),
+            self.progress_current.clone(),
+            self.progress_max.clone(),
+            |bw: u16, bh: u16| {
+                let h = 7;
+                let w = bw - 10;
+                Rect {
+                    x: bw / 2 - w / 2,
+                    y: bh / 2 - h / 2,
+                    w,
+                    h,
+                }
+            },
+        );
+        self.important_widget = Some(Box::new(progress_bar));
+
+        let counter = self.progress_current.clone();
+        let max = self.progress_max.clone();
+
+        self.sort_thread = Some(thread::spawn(move || {
+            move_files_with_progress(plan, counter, max, progress_desc).ok()
+        }));
     }
 
     fn handle_sort_by_type(&mut self, dry: bool) {
         match fix_duplicates_in_dir(&self.dir, dry) {
             Ok(files) => {
+                if dry {
+                    self.pending_sort = Some(files.clone());
+                }
                 let dir_list = UIFileList::new(
                     self.dir.display().to_string(),
                     files,
@@ -268,6 +324,7 @@ impl App {
                 menu.add_item("Cancel".to_string(), "no".to_string());
 
                 self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+                self.selected_widget = 1;
             }
             Err(_) => (),
         }

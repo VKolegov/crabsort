@@ -64,6 +64,7 @@ pub struct MenuItem {
     pub event: String,
 }
 
+#[derive(Clone)]
 pub struct FileTreeItem {
     pub path: String,
     pub children: Vec<FileTreeItem>,
