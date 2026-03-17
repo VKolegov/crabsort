@@ -68,6 +68,7 @@ where
             self.title.as_str(),
             &self.lines,
             self.scroll_offset,
+            self.selected_n,
             focused,
         );
     }
@@ -75,13 +76,31 @@ where
     fn handle_input(&mut self, key: Key) {
         match key {
             Key::Char('k') => {
-                if self.scroll_offset > 0 {
+                if self.selected_n > 0 {
+                    self.selected_n -= 1;
+                }
+                if self.scroll_offset > 0 && self.selected_n <= self.scroll_offset + 1 {
                     self.scroll_offset -= 1;
                 }
             }
             Key::Char('j') => {
-                // TODO: not by items, by actual size
-                if self.scroll_offset < self.lines.len() - 1 {
+                let l = self.lines.len();
+                                                 //
+                if self.selected_n < l - 1 {
+                    self.selected_n += 1;
+                }
+                
+                let h = (self.r.h - 2) as usize; // 2 lines margin
+                if l < h {
+                    return;
+                }
+
+                let max_scroll = l - h; //e.g. 20 lines, height is 15, max scroll is 5
+                // or offset is at the bottom already
+                if self.scroll_offset >= max_scroll {
+                    return
+                }
+                if (self.scroll_offset + self.selected_n + 1) >= h {
                     self.scroll_offset += 1;
                 }
             }

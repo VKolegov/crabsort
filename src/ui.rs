@@ -75,6 +75,7 @@ pub fn draw_string_list_flat(
     title: &str,
     lines: &Vec<String>,
     scroll_offset: usize,
+    highlighted_n: usize,
     focused: bool,
 ) {
     draw_box(buf, r, title, focused);
@@ -82,7 +83,7 @@ pub fn draw_string_list_flat(
     let lm: usize = 3;
     let rm: usize = 3;
     let tm: usize = 1;
-    let bm: usize = 2;
+    let bm: usize = 1;
 
     let inner_w = (r.w as usize).saturating_sub(lm + rm);
     let inner_h = (r.h as usize).saturating_sub(tm + bm);
@@ -93,14 +94,37 @@ pub fn draw_string_list_flat(
             break;
         }
 
+        let selected = highlighted_n == item_idx;
+
         let line: String = lines[item_idx].chars().take(inner_w).collect();
+        
+        let (fg, bg) = if selected && focused {
+            (Color::Black, Color::Yellow)
+        } else if selected {
+            (Color::Black, Color::Grey)
+        } else {
+            (Color::White, Color::Reset)
+        };
+
+        fill_rect(
+            buf,
+            &Rect {
+                x: r.x + (lm as u16),
+                y: r.y + (tm + i) as u16,
+                w: inner_w as u16,
+                h: 1,
+            },
+            ' ',
+            fg,
+            bg,
+        );
 
         buf.put_str(
             r.x + lm as u16,
             r.y + (tm + i) as u16,
             &line,
-            Color::White,
-            Color::Reset,
+            fg,
+            bg,
         );
     }
 }
@@ -112,7 +136,7 @@ pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], se
     let rm: usize = 2;
     let lm = 2;
     let tm = 1;
-    let bm: usize = 2;
+    let bm: usize = 1;
 
     let inner_w = (r.w as usize) - rm - lm as usize;
     let inner_h = (r.h as usize) - tm - bm as usize;
