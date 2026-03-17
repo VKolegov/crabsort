@@ -60,8 +60,17 @@ struct App {
 }
 
 const MENU_MAIN: &str = "main_menu";
+const ACTION_SORT: &str = "sort";
+const ACTION_FIND_DUPLICATES: &str = "find_duplicates";
+
+
 const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
 const MENU_DUPLICATES: &str = "duplicates_menu";
+
+const ACTION_CONFIRM: &str = "confirm";
+const ACTION_BACK: &str = "back";
+const ACTION_QUIT: &str = "quit";
+
 
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
@@ -231,9 +240,15 @@ impl App {
 
     fn handle_events(&mut self) {
         for event in &self.bus.drain() {
+
+            if event.payload == ACTION_QUIT {
+                self.quit = true;
+                return;
+            }
+
             match (event.source, event.payload.as_str()) {
-                (MENU_MAIN, "sort_by_type") => self.handle_sort_by_type(true),
-                (MENU_MAIN, "find_duplicates") => {
+                (MENU_MAIN, ACTION_SORT) => self.handle_sort_by_type(true),
+                (MENU_MAIN, ACTION_FIND_DUPLICATES) => {
                     self.progress_active = true;
 
                     let p = self.dir.clone();
@@ -244,10 +259,7 @@ impl App {
                         find_duplicates_async(&p, counter, max).ok()
                     }));
                 }
-                (MENU_MAIN, "quit") | (MENU_DUPLICATES, "quit") => {
-                    self.quit = true;
-                }
-                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, "back") => self.go_to_first_page(),
+                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, ACTION_BACK) => self.go_to_first_page(),
                 _ => {}
             }
         }
@@ -287,7 +299,7 @@ impl App {
                     },
                 );
 
-                menu.add_item("Confirm".to_string(), "yes".to_string());
+                menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
                 menu.add_item("Cancel".to_string(), "no".to_string());
 
                 self.widgets = vec![Box::new(menu), Box::new(dir_list)];
@@ -331,9 +343,9 @@ impl App {
             },
         );
 
-        menu.add_item("Sort by type".to_string(), "sort_by_type".to_string());
-        menu.add_item("Find duplicates".to_string(), "find_duplicates".to_string());
-        menu.add_item("Quit".to_string(), "quit".to_string());
+        menu.add_item("Sort by type".to_string(), ACTION_SORT.to_string());
+        menu.add_item("Find duplicates".to_string(), ACTION_FIND_DUPLICATES.to_string());
+        menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
@@ -411,9 +423,9 @@ impl App {
             },
         );
 
-        menu.add_item("Confirm".to_string(), "confirm".to_string());
-        menu.add_item("Back".to_string(), "back".to_string());
-        menu.add_item("Quit".to_string(), "quit".to_string());
+        menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
+        menu.add_item("Back".to_string(), ACTION_BACK.to_string());
+        menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
