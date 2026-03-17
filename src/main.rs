@@ -269,8 +269,8 @@ impl App {
         let desc = Arc::new(Mutex::new(String::new()));
 
         let progress_bar = UIProgressBar::new(
-            "Working...".to_string(),
             desc.clone(),
+            None,
             self.progress_current.clone(),
             self.progress_max.clone(),
             |bw: u16, bh: u16| {

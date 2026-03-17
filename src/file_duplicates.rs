@@ -27,7 +27,7 @@ pub fn find_duplicates_async(
         .map(|n| n.get())
         .unwrap_or(1); // fallback на 1
 
-    *stage_description.clone().lock().unwrap() = String::from("[Step 1] Building files tree...");
+    *stage_description.clone().lock().unwrap() = String::from("[Step 1/3] Scanning for files");
 
     let mut files_by_sizes =
         find_same_size_files_recursive_parallel(p, min_file_size_kb, max_file_size_kb, progress.clone(), n_threads)?;
@@ -50,7 +50,7 @@ pub fn find_duplicates_async(
     // step 2 - partial hash
     *progress.lock().unwrap() = 0;
     *max.lock().unwrap() = files_count_for_partial_hash;
-    *stage_description.clone().lock().unwrap() = String::from("[Step 2] Scanning for potential duplicates...");
+    *stage_description.clone().lock().unwrap() = String::from("[Step 2/3] Calculating potential duplicates");
     let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
@@ -81,7 +81,7 @@ pub fn find_duplicates_async(
     // step 3 - full hash
     *progress.lock().unwrap() = 0;
     *max.lock().unwrap() = files_count_for_full_hash;
-    *stage_description.clone().lock().unwrap() = String::from("[Step 3] Evaluating duplicates...");
+    *stage_description.clone().lock().unwrap() = String::from("[Step 3/3] Evaluating duplicates");
     let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for (_, file_vec) in partial_hash_map {
         let mut phash_group_full_hash_map = process_group_full_hash(file_vec.clone(), n_threads);

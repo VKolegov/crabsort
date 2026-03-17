@@ -12,8 +12,8 @@ pub struct UIProgressBar<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    title: String,
-    description: Arc<Mutex<String>>,
+    title: Arc<Mutex<String>>,
+    description: Option<Arc<Mutex<String>>>,
     current: Arc<Mutex<u64>>,
     max: Arc<Mutex<u64>>,
 
@@ -26,8 +26,8 @@ where
     F: Fn(u16, u16) -> Rect,
 {
     pub fn new(
-        title: String,
-        desc: Arc<Mutex<String>>,
+        title: Arc<Mutex<String>>,
+        desc: Option<Arc<Mutex<String>>>,
         current: Arc<Mutex<u64>>,
         max: Arc<Mutex<u64>>,
         c: F,
@@ -63,15 +63,14 @@ where
         let detail_string;
         let mut progress_line = String::new();
 
-        let desc = self.description.lock().unwrap();
 
         if max_val > 0 {
             let bar_width = r.w.saturating_sub(4) as u64;
             let p = current_val * bar_width / max_val;
             progress_line = "█".repeat(p as usize);
-            detail_string = format!("{} {}/{}", desc, current_val, max_val);
+            detail_string = format!("{}/{}", current_val, max_val);
         } else { 
-            detail_string = format!("{} {}", desc, current_val);
+            detail_string = format!("{}", current_val);
         }
 
         let mut ri = r.clone();
@@ -80,7 +79,9 @@ where
         ri.w -= 2;
         ri.h -= 2;
 
-        draw_box(buffer, &r, &self.title, focused);
+        let title = self.title.clone();
+
+        draw_box(buffer, &r, &*title.lock().unwrap(), focused);
         fill_rect(buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
 
         buffer.put_str(
@@ -90,6 +91,17 @@ where
             buffer::Color::White,
             buffer::Color::Black,
         );
+
+
+        if let Some(desc) = &self.description {
+            buffer.put_str(
+                r.x + 2,
+                r.y + 3,
+                &*desc.lock().unwrap(),
+                buffer::Color::Yellow,
+                buffer::Color::Black,
+            );
+        }
 
         if max_val > 0 {
             buffer.put_str(
