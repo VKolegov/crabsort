@@ -86,6 +86,7 @@ pub enum Key {
     Down,
     Left,
     Right,
+    Backspace,
     None,
 }
 
@@ -101,6 +102,7 @@ pub fn read_key() -> Key {
     match buf[0] {
         b'\t' => Key::Tab,
         b'\r' => Key::Enter,
+        0x08 | 0x7F => Key::Backspace,
         0x1b => {
             if n == 1 {
                 return Key::Escape;

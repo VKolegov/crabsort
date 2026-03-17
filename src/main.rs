@@ -12,7 +12,7 @@ use crate::{
     file_types::{detect_file_type, type_dir},
     term::read_key,
     ui::{FileTreeItem, Rect},
-    widgets::{UIFileList, UIMenu, Widget},
+    widgets::{UIFileList, UIMenu, Widget, UIInputDialog},
 };
 use std::{
     collections::HashMap,
@@ -70,6 +70,9 @@ const MENU_DUPLICATES: &str = "duplicates_menu";
 const ACTION_CONFIRM: &str = "confirm";
 const ACTION_BACK: &str = "back";
 const ACTION_QUIT: &str = "quit";
+
+
+const INPUT_TEST: &str = "input_test";
 
 
 impl App {
@@ -197,10 +200,8 @@ impl App {
     fn handle_input(&mut self) -> bool {
         let k = read_key();
         match k {
+            // TODO: this will cause issues with input dialog
             term::Key::Char('q') => return false,
-            term::Key::Char('s') => {
-                self.progress_active = !false;
-            }
             term::Key::Tab => {
                 if self.selected_widget < self.widgets.len() - 1 {
                     self.selected_widget += 1;
@@ -347,7 +348,31 @@ impl App {
         menu.add_item("Find duplicates".to_string(), ACTION_FIND_DUPLICATES.to_string());
         menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
-        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+
+        // 
+
+        let input_dialogue = UIInputDialog::new(
+            INPUT_TEST,
+            "Input something".to_string(),
+            self.bus.clone(),
+            |bw: u16, bh: u16| {
+                let h = 5;
+                let w = bw - 10;
+
+                Rect {
+                    x: bw / 2 - w / 2,
+                    y: bh / 2 - h / 2,
+                    w: w,
+                    h: h,
+                }
+            }
+        );
+
+        self.widgets = vec![
+            Box::new(menu), 
+            Box::new(dir_list),
+            Box::new(input_dialogue),
+        ];
     }
 
     fn go_to_duplicates_page(&mut self) {
