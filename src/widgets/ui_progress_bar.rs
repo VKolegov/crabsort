@@ -13,6 +13,7 @@ where
     F: Fn(u16, u16) -> Rect,
 {
     title: String,
+    description: Arc<Mutex<String>>,
     current: Arc<Mutex<u64>>,
     max: Arc<Mutex<u64>>,
 
@@ -24,12 +25,19 @@ impl<F> UIProgressBar<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    pub fn new(title: String, current: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>, c: F) -> Self {
+    pub fn new(
+        title: String,
+        desc: Arc<Mutex<String>>,
+        current: Arc<Mutex<u64>>,
+        max: Arc<Mutex<u64>>,
+        c: F,
+    ) -> Self {
         Self {
             title,
+            description: desc,
             current,
             max,
-            r: Rect::new(0,0,0,0),
+            r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
     }
@@ -43,7 +51,6 @@ where
         self.r = (self.layout_cb)(w, h);
     }
     fn draw(&mut self, buffer: &mut Buffer, focused: bool) {
-
         if self.r.h == 0 || self.r.w == 0 {
             self.handle_buf_size_change(buffer.width, buffer.height);
         }
@@ -56,13 +63,15 @@ where
         let detail_string;
         let mut progress_line = String::new();
 
+        let desc = self.description.lock().unwrap();
+
         if max_val > 0 {
             let bar_width = r.w.saturating_sub(4) as u64;
             let p = current_val * bar_width / max_val;
             progress_line = "█".repeat(p as usize);
-            detail_string = format!("{}/{}", current_val, max_val);
-        } else {
-            detail_string = format!("{}", current_val);
+            detail_string = format!("{} {}/{}", desc, current_val, max_val);
+        } else { 
+            detail_string = format!("{} {}", desc, current_val);
         }
 
         let mut ri = r.clone();
@@ -72,13 +81,7 @@ where
         ri.h -= 2;
 
         draw_box(buffer, &r, &self.title, focused);
-        fill_rect(
-            buffer,
-            &ri,
-            ' ',
-            buffer::Color::Black,
-            buffer::Color::Black,
-        );
+        fill_rect(buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
 
         buffer.put_str(
             r.x + 2,

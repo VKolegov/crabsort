@@ -265,8 +265,12 @@ impl App {
     }
 
     fn handle_find_duplicates(&mut self) {
+
+        let desc = Arc::new(Mutex::new(String::new()));
+
         let progress_bar = UIProgressBar::new(
             "Working...".to_string(),
+            desc.clone(),
             self.progress_current.clone(),
             self.progress_max.clone(),
             |bw: u16, bh: u16| {
@@ -295,8 +299,9 @@ impl App {
 
         let max_size = 1 * 1024 * 1024 * 1024; // 1gb
 
+        let dc = desc.clone();
         self.duplicates_thread = Some(thread::spawn(move || {
-            find_duplicates_async(&p, min_size, max_size, counter, max).ok()
+            find_duplicates_async(&p, min_size, max_size, dc, counter, max).ok()
         }));
     }
 
