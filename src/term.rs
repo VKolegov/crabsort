@@ -91,7 +91,7 @@ pub enum Key {
 }
 
 pub fn read_key() -> Key {
-    let mut buf = [0u8; 3];
+    let mut buf = [0u8; 4];
 
     let n = io::stdin().read(&mut buf).unwrap_or(0);
 

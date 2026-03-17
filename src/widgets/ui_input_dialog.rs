@@ -61,6 +61,9 @@ where
 
     fn handle_input(&mut self, key: Key) {
         match key {
+            Key::Escape => {
+                self.bus.push(self.id, "cancel".to_string());
+            }
             Key::Enter => {
                 self.bus.push(self.id, self.input.clone());
             },

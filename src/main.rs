@@ -12,7 +12,7 @@ use crate::{
     file_types::{detect_file_type, type_dir},
     term::read_key,
     ui::{FileTreeItem, Rect},
-    widgets::{UIFileList, UIMenu, Widget, UIInputDialog},
+    widgets::{UIFileList, UIInputDialog, UIMenu, Widget},
 };
 use std::{
     collections::HashMap,
@@ -53,6 +53,9 @@ struct App {
     progress_current: Arc<Mutex<u64>>,
     progress_max: Arc<Mutex<u64>>,
 
+    latest_input: Option<String>,
+    important_widget: Option<Box<dyn Widget>>,
+
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
 
@@ -62,7 +65,7 @@ struct App {
 const MENU_MAIN: &str = "main_menu";
 const ACTION_SORT: &str = "sort";
 const ACTION_FIND_DUPLICATES: &str = "find_duplicates";
-
+const ACTION_ASK_DUPLICATES_MIN_SIZE: &str = "duplicates_min_size";
 
 const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
 const MENU_DUPLICATES: &str = "duplicates_menu";
@@ -71,9 +74,7 @@ const ACTION_CONFIRM: &str = "confirm";
 const ACTION_BACK: &str = "back";
 const ACTION_QUIT: &str = "quit";
 
-
 const INPUT_TEST: &str = "input_test";
-
 
 impl App {
     fn new(dir: PathBuf, dir_arg: String) -> Self {
@@ -83,6 +84,7 @@ impl App {
             dir_arg,
             widgets: vec![],
             selected_widget: 0,
+            important_widget: None,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(w, h),
             progress_active: false,
@@ -90,6 +92,7 @@ impl App {
             progress_max: Arc::new(Mutex::new(0)),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             duplicates_thread: None,
+            latest_input: None,
             quit: false,
         }
     }
@@ -107,12 +110,13 @@ impl App {
             self.buffer.clear();
             self.render();
 
-            if self.progress_active {
-                self.render_progress();
-            }
-
             print!("{}", self.buffer.flush());
             term::t_flush();
+
+            // testing input
+            // if self.latest_input == Some("fuck".into()) {
+            //     self.quit = true;
+            // }
 
             if self.quit || !self.handle_input() {
                 break;
@@ -192,13 +196,28 @@ impl App {
         for (i, w) in self.widgets.iter().enumerate() {
             w.draw(
                 &mut self.buffer,
-                !self.progress_active && i == self.selected_widget,
+                !self.progress_active
+                    && self.important_widget.is_none()
+                    && i == self.selected_widget,
             );
+        }
+        if self.progress_active {
+            self.render_progress();
+        }
+        if let Some(w) = &self.important_widget {
+            w.draw(&mut self.buffer, true);
         }
     }
 
     fn handle_input(&mut self) -> bool {
         let k = read_key();
+
+        if let Some(w) = self.important_widget.as_mut() {
+            w.handle_input(k);
+
+            return true;
+        }
+
         match k {
             // TODO: this will cause issues with input dialog
             term::Key::Char('q') => return false,
@@ -241,14 +260,18 @@ impl App {
 
     fn handle_events(&mut self) {
         for event in &self.bus.drain() {
-
             if event.payload == ACTION_QUIT {
                 self.quit = true;
                 return;
             }
 
-            match (event.source, event.payload.as_str()) {
+            let payload_str = event.payload.as_str();
+
+            match (event.source, payload_str) {
                 (MENU_MAIN, ACTION_SORT) => self.handle_sort_by_type(true),
+                (MENU_MAIN, ACTION_ASK_DUPLICATES_MIN_SIZE) => {
+                    self.show_input_dialogue("Input min size (in kilobytes)".into());
+                }
                 (MENU_MAIN, ACTION_FIND_DUPLICATES) => {
                     self.progress_active = true;
 
@@ -256,12 +279,39 @@ impl App {
                     let counter = self.progress_current.clone();
                     let max = self.progress_max.clone();
 
+                    let min_size: u64 = match self.latest_input.take() {
+                        Some(txt) => {
+                            txt.parse::<u64>().unwrap() * 1024 // kb
+                        }
+                        None => 100 * 1024, // 100 kb
+                    };
+
+                    let max_size = 1 * 1024 * 1024 * 1024; // 1gb
+
                     self.duplicates_thread = Some(thread::spawn(move || {
-                        find_duplicates_async(&p, counter, max).ok()
+                        find_duplicates_async(&p, min_size, max_size, counter, max).ok()
                     }));
                 }
-                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, ACTION_BACK) => self.go_to_first_page(),
+                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, ACTION_BACK) => {
+                    self.go_to_first_page()
+                }
                 _ => {}
+            }
+
+            match event.source {
+                INPUT_TEST => match payload_str {
+                    "cancel" => {
+                        self.latest_input = None;
+                        self.important_widget = None;
+                    }
+                    _ => {
+                        self.latest_input = Some(event.payload.clone());
+                        self.important_widget = None;
+
+                        self.bus.push(MENU_MAIN, ACTION_FIND_DUPLICATES.to_string());
+                    }
+                },
+                _ => (),
             }
         }
     }
@@ -345,34 +395,13 @@ impl App {
         );
 
         menu.add_item("Sort by type".to_string(), ACTION_SORT.to_string());
-        menu.add_item("Find duplicates".to_string(), ACTION_FIND_DUPLICATES.to_string());
+        menu.add_item(
+            "Find duplicates".to_string(),
+            ACTION_ASK_DUPLICATES_MIN_SIZE.to_string(),
+        );
         menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
-
-        // 
-
-        let input_dialogue = UIInputDialog::new(
-            INPUT_TEST,
-            "Input something".to_string(),
-            self.bus.clone(),
-            |bw: u16, bh: u16| {
-                let h = 5;
-                let w = bw - 10;
-
-                Rect {
-                    x: bw / 2 - w / 2,
-                    y: bh / 2 - h / 2,
-                    w: w,
-                    h: h,
-                }
-            }
-        );
-
-        self.widgets = vec![
-            Box::new(menu), 
-            Box::new(dir_list),
-            Box::new(input_dialogue),
-        ];
+        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
 
     fn go_to_duplicates_page(&mut self) {
@@ -388,7 +417,7 @@ impl App {
             for f in &files {
                 total_size += f.size;
             }
-            possible_savings += files[0].size * (files.len() - 1) as u64; 
+            possible_savings += files[0].size * (files.len() - 1) as u64;
 
             let children = files
                 .iter()
@@ -416,21 +445,16 @@ impl App {
             total_size / 1024 / 1024,
         );
 
-        let dir_list = UIFileList::new(
-            title,
-            dir_files,
-            2,
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: FILE_LIST_TOP,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: file_list_h,
-                }
-            },
-        );
+        let dir_list = UIFileList::new(title, dir_files, 2, |w: u16, h: u16| {
+            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+            let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+            Rect {
+                x: LEFT_MARGIN,
+                y: FILE_LIST_TOP,
+                w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                h: file_list_h,
+            }
+        });
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,
@@ -453,6 +477,23 @@ impl App {
         menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+    }
+
+    fn show_input_dialogue(&mut self, title: String) {
+        let input_dialogue =
+            UIInputDialog::new(INPUT_TEST, title, self.bus.clone(), |bw: u16, bh: u16| {
+                let h = 5;
+                let w = bw - 10;
+
+                Rect {
+                    x: bw / 2 - w / 2,
+                    y: bh / 2 - h / 2,
+                    w: w,
+                    h: h,
+                }
+            });
+
+        self.important_widget = Some(Box::new(input_dialogue));
     }
 }
 

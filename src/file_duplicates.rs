@@ -15,14 +15,19 @@ pub struct FileInfo {
     first_and_last_4kb: [u8; 8192],
 }
 
-pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex<u64>>) -> Result<HashMap<String, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
-
+pub fn find_duplicates_async(
+    p: &Path,
+    min_file_size_kb: u64,
+    max_file_size_kb: u64,
+    progress: Arc<Mutex<u64>>,
+    max: Arc<Mutex<u64>>,
+) -> Result<HashMap<String, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
     let n_threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1); // fallback на 1
-            
 
-    let mut files_by_sizes = find_same_size_files_recursive_parallel(p, progress.clone(), n_threads)?;
+    let mut files_by_sizes =
+        find_same_size_files_recursive_parallel(p, min_file_size_kb, max_file_size_kb, progress.clone(), n_threads)?;
 
     let mut files_count_for_partial_hash: u64 = 0;
     let mut files_count_for_full_hash: u64 = 0;
@@ -39,15 +44,14 @@ pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex
         }
     });
 
-
-
     // step 2 - partial hash
     *progress.lock().unwrap() = 0;
     *max.lock().unwrap() = files_count_for_partial_hash;
     let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
-        let mut size_group_partial_hash_map = process_group_partial_hash(file_vec.to_vec(), n_threads);
+        let mut size_group_partial_hash_map =
+            process_group_partial_hash(file_vec.to_vec(), n_threads);
         *progress.lock().unwrap() += file_vec.len() as u64;
 
         // filtering groups within size groups
@@ -69,7 +73,6 @@ pub fn find_duplicates_async(p: &Path, progress: Arc<Mutex<u64>>, max: Arc<Mutex
                 .extend(v.clone());
         }
     }
-
 
     // step 3 - full hash
     *progress.lock().unwrap() = 0;
@@ -218,6 +221,8 @@ fn process_group_full_hash(
 
 pub fn build_dir_flatmap_parallel(
     p: &Path,
+    min_file_size_kb: u64,
+    max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
     max_threads: usize,
 ) -> Vec<Arc<FileInfo>> {
@@ -239,15 +244,20 @@ pub fn build_dir_flatmap_parallel(
                 }
 
                 handles.push(thread::spawn(move || {
-                    let child_files =
-                        build_dir_flatmap_parallel(&path, files_read_clone, max_threads);
+                    let child_files = build_dir_flatmap_parallel(
+                        &path,
+                        min_file_size_kb,
+                        max_file_size_kb,
+                        files_read_clone,
+                        max_threads,
+                    );
                     let mut dm = dir_map_clone.lock().unwrap();
                     dm.extend(child_files);
                 }));
             } else if path.is_file() && !path.is_symlink() {
                 if let Ok(meta) = entry.metadata() {
                     let file_size = meta.len();
-                    if file_size < 1024 * 100 || file_size > 1024 * 1024 * 1024 {
+                    if file_size < min_file_size_kb || file_size > max_file_size_kb {
                         continue;
                     }
 
@@ -277,10 +287,18 @@ pub fn build_dir_flatmap_parallel(
 
 pub fn find_same_size_files_recursive_parallel(
     p: &Path,
+    min_file_size_kb: u64,
+    max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
     max_threads: usize,
 ) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
-    let files = build_dir_flatmap_parallel(p, Arc::clone(&files_read), max_threads);
+    let files = build_dir_flatmap_parallel(
+        p,
+        min_file_size_kb,
+        max_file_size_kb,
+        Arc::clone(&files_read),
+        max_threads,
+    );
 
     // Группировка по размеру
     let mut files_by_sizes: HashMap<u64, Vec<Arc<FileInfo>>> = HashMap::new();
@@ -290,4 +308,3 @@ pub fn find_same_size_files_recursive_parallel(
 
     Ok(files_by_sizes)
 }
-
