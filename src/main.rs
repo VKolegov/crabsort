@@ -8,7 +8,12 @@ mod ui;
 mod widgets;
 
 use crate::{
-    event_bus::EventBus, file_duplicates::{FileInfo, find_duplicates_async}, file_sorting::fix_duplicates_in_dir, term::read_key, ui::{FileTreeItem, Rect}, widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget}
+    event_bus::EventBus,
+    file_duplicates::{FileInfo, find_duplicates_async},
+    file_sorting::fix_duplicates_in_dir,
+    term::read_key,
+    ui::{FileTreeItem, Rect},
+    widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget},
 };
 use std::{
     collections::HashMap,
@@ -37,7 +42,6 @@ const FILE_LIST_GAP: u16 = 2;
 
 struct App {
     dir: PathBuf,
-    dir_arg: String,
     buffer: buffer::Buffer,
 
     widgets: Vec<Box<dyn Widget>>,
@@ -58,7 +62,6 @@ struct App {
 
 const MENU_MAIN: &str = "main_menu";
 const ACTION_SORT: &str = "sort";
-const ACTION_FIND_DUPLICATES: &str = "find_duplicates";
 const ACTION_ASK_DUPLICATES_MIN_SIZE: &str = "duplicates_min_size";
 
 const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
@@ -68,14 +71,13 @@ const ACTION_CONFIRM: &str = "confirm";
 const ACTION_BACK: &str = "back";
 const ACTION_QUIT: &str = "quit";
 
-const INPUT_TEST: &str = "input_test";
+const INPUT_DIALOG: &str = "input_test";
 
 impl App {
-    fn new(dir: PathBuf, dir_arg: String) -> Self {
+    fn new(dir: PathBuf) -> Self {
         let (w, h) = term::terminal_size();
         Self {
             dir,
-            dir_arg,
             widgets: vec![],
             selected_widget: 0,
             important_widget: None,
@@ -105,11 +107,6 @@ impl App {
 
             print!("{}", self.buffer.flush());
             term::t_flush();
-
-            // testing input
-            // if self.latest_input == Some("fuck".into()) {
-            //     self.quit = true;
-            // }
 
             if self.quit || !self.handle_input() {
                 break;
@@ -144,7 +141,6 @@ impl App {
         }
 
         match k {
-            // TODO: this will cause issues with input dialog
             term::Key::Char('q') => return false,
             term::Key::Tab => {
                 if self.selected_widget < self.widgets.len() - 1 {
@@ -195,41 +191,6 @@ impl App {
                 (MENU_MAIN, ACTION_ASK_DUPLICATES_MIN_SIZE) => {
                     self.show_input_dialogue("Input min size (in kilobytes)".into());
                 }
-                (MENU_MAIN, ACTION_FIND_DUPLICATES) => {
-                    let progress_bar = UIProgressBar::new(
-                        "Working...".to_string(),
-                        self.progress_current.clone(),
-                        self.progress_max.clone(),
-                        |bw: u16, bh: u16| {
-                            let h = 7;
-                            let w = bw - 10;
-                            Rect {
-                                x: bw / 2 - w / 2,
-                                y: bh / 2 - h / 2,
-                                w,
-                                h,
-                            }
-                        },
-                    );
-                    self.important_widget = Some(Box::new(progress_bar));
-
-                    let p = self.dir.clone();
-                    let counter = self.progress_current.clone();
-                    let max = self.progress_max.clone();
-
-                    let min_size: u64 = match self.latest_input.take() {
-                        Some(txt) => {
-                            txt.parse::<u64>().unwrap() * 1024 // kb
-                        }
-                        None => 100 * 1024, // 100 kb
-                    };
-
-                    let max_size = 1 * 1024 * 1024 * 1024; // 1gb
-
-                    self.duplicates_thread = Some(thread::spawn(move || {
-                        find_duplicates_async(&p, min_size, max_size, counter, max).ok()
-                    }));
-                }
                 (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, ACTION_BACK) => {
                     self.go_to_first_page()
                 }
@@ -237,7 +198,7 @@ impl App {
             }
 
             match event.source {
-                INPUT_TEST => match payload_str {
+                INPUT_DIALOG => match payload_str {
                     "cancel" => {
                         self.latest_input = None;
                         self.important_widget = None;
@@ -246,7 +207,7 @@ impl App {
                         self.latest_input = Some(event.payload.clone());
                         self.important_widget = None;
 
-                        self.bus.push(MENU_MAIN, ACTION_FIND_DUPLICATES.to_string());
+                        self.handle_find_duplicates();
                     }
                 },
                 _ => (),
@@ -295,6 +256,42 @@ impl App {
             }
             Err(_) => (),
         }
+    }
+
+    fn handle_find_duplicates(&mut self) {
+        let progress_bar = UIProgressBar::new(
+            "Working...".to_string(),
+            self.progress_current.clone(),
+            self.progress_max.clone(),
+            |bw: u16, bh: u16| {
+                let h = 7;
+                let w = bw - 10;
+                Rect {
+                    x: bw / 2 - w / 2,
+                    y: bh / 2 - h / 2,
+                    w,
+                    h,
+                }
+            },
+        );
+        self.important_widget = Some(Box::new(progress_bar));
+
+        let p = self.dir.clone();
+        let counter = self.progress_current.clone();
+        let max = self.progress_max.clone();
+
+        let min_size: u64 = match self.latest_input.take() {
+            Some(txt) => {
+                txt.parse::<u64>().unwrap() * 1024 // kb
+            }
+            None => 100 * 1024, // 100 kb
+        };
+
+        let max_size = 1 * 1024 * 1024 * 1024; // 1gb
+
+        self.duplicates_thread = Some(thread::spawn(move || {
+            find_duplicates_async(&p, min_size, max_size, counter, max).ok()
+        }));
     }
 
     fn go_to_first_page(&mut self) {
@@ -419,7 +416,7 @@ impl App {
 
     fn show_input_dialogue(&mut self, title: String) {
         let input_dialogue =
-            UIInputDialog::new(INPUT_TEST, title, self.bus.clone(), |bw: u16, bh: u16| {
+            UIInputDialog::new(INPUT_DIALOG, title, self.bus.clone(), |bw: u16, bh: u16| {
                 let h = 5;
                 let w = bw - 10;
 
@@ -443,13 +440,13 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let (dir, dir_arg) = parse_args()?;
+    let (dir, _) = parse_args()?;
 
     term::enable_raw_mode();
     term::enter_alternate_screen();
     term::hide_cursor();
 
-    let mut app = App::new(dir, dir_arg);
+    let mut app = App::new(dir);
     let result = app.run();
 
     term::exit_alternate_screen();
