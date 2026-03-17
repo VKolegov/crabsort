@@ -65,6 +65,7 @@ const ACTION_SORT: &str = "sort";
 const ACTION_ASK_DUPLICATES_MIN_SIZE: &str = "duplicates_min_size";
 
 const MENU_CONFIRM_SORT: &str = "confirm_sort_menu";
+const MENU_SORT_SUCCESS: &str = "sort_success_menu";
 const MENU_DUPLICATES: &str = "duplicates_menu";
 
 const ACTION_CONFIRM: &str = "confirm";
@@ -197,7 +198,8 @@ impl App {
                 (MENU_MAIN, ACTION_ASK_DUPLICATES_MIN_SIZE) => {
                     self.show_input_dialogue("Input min size (in kilobytes)".into());
                 }
-                (MENU_CONFIRM_SORT, "no") | (MENU_DUPLICATES, ACTION_BACK) => {
+                (MENU_CONFIRM_SORT, ACTION_CONFIRM) => self.handle_confirm_sort(),
+                (MENU_CONFIRM_SORT, "no") | (MENU_SORT_SUCCESS, ACTION_BACK) | (MENU_DUPLICATES, ACTION_BACK) => {
                     self.go_to_first_page()
                 }
                 _ => {}
@@ -218,6 +220,13 @@ impl App {
                 },
                 _ => (),
             }
+        }
+    }
+
+    fn handle_confirm_sort(&mut self) {
+        match fix_duplicates_in_dir(&self.dir, false) {
+            Ok(files) => self.go_to_sort_success_page(files),
+            Err(_) => self.go_to_first_page(),
         }
     }
 
@@ -352,6 +361,46 @@ impl App {
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
 
+    fn go_to_sort_success_page(&mut self, files: Vec<FileTreeItem>) {
+        let count: usize = files.iter().map(|item| item.children.len()).sum();
+
+        let dir_list = UIFileList::new(
+            format!("Moved {} files", count),
+            files,
+            2,
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: FILE_LIST_TOP,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: file_list_h,
+                }
+            },
+        );
+
+        let mut menu = UIMenu::new(
+            MENU_SORT_SUCCESS,
+            format!("Done! Moved {} files.", count),
+            vec![],
+            self.bus.clone(),
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: menu_y,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: MENU_HEIGHT,
+                }
+            },
+        );
+
+        menu.add_item("Back".to_string(), ACTION_BACK.to_string());
+
+        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+    }
+
     fn go_to_duplicates_page(&mut self) {
         let dm = self.duplicates_map.lock().unwrap();
 
@@ -425,6 +474,7 @@ impl App {
         menu.add_item("Quit".to_string(), ACTION_QUIT.to_string());
 
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+        self.selected_widget = 1;
     }
 
     fn show_input_dialogue(&mut self, title: String) {
