@@ -76,6 +76,19 @@ const ACTION_QUIT: &str = "quit";
 
 const INPUT_DIALOG: &str = "input_test";
 
+fn split_supported_unsupported(items: Vec<FileTreeItem>) -> (Vec<FileTreeItem>, Vec<FileTreeItem>) {
+    let mut supported = Vec::new();
+    let mut unsupported = Vec::new();
+    for item in items {
+        if item.path == "unsupported" {
+            unsupported.push(item);
+        } else {
+            supported.push(item);
+        }
+    }
+    (supported, unsupported)
+}
+
 impl App {
     fn new(dir: PathBuf) -> Self {
         Self {
@@ -289,21 +302,43 @@ impl App {
                 if dry {
                     self.pending_sort = Some(files.clone());
                 }
-                let dir_list = UIFileList::new(
-                    self.dir.display().to_string(),
-                    files,
+                let (supported, unsupported) = split_supported_unsupported(files);
+
+                let supported_list = UIFileList::new(
+                    format!("{} | Files to move", self.dir.display()),
+                    supported,
                     2,
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                        let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                        let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                        let supported_h = available / 2;
                         Rect {
                             x: LEFT_MARGIN,
                             y: FILE_LIST_TOP,
                             w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                            h: file_list_h,
+                            h: supported_h,
                         }
                     },
                 );
+
+                let unsupported_list = UIFileList::new(
+                    "Unsupported (not moved)".to_string(),
+                    unsupported,
+                    2,
+                    |w: u16, h: u16| {
+                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                        let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                        let supported_h = available / 2;
+                        let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
+                        Rect {
+                            x: LEFT_MARGIN,
+                            y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                            h: unsupported_h,
+                        }
+                    },
+                );
+
                 let mut menu = UIMenu::new(
                     MENU_CONFIRM_SORT,
                     "Confirm action".to_string(),
@@ -323,7 +358,11 @@ impl App {
                 menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
                 menu.add_item("Cancel".to_string(), "no".to_string());
 
-                self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+                self.widgets = vec![
+                    Box::new(menu),
+                    Box::new(supported_list),
+                    Box::new(unsupported_list),
+                ];
                 self.selected_widget = 1;
             }
             Err(_) => (),
@@ -419,20 +458,40 @@ impl App {
     }
 
     fn go_to_sort_success_page(&mut self, files: Vec<FileTreeItem>) {
-        let count: usize = files.iter().map(|item| item.children.len()).sum();
+        let (supported, unsupported) = split_supported_unsupported(files);
+        let count: usize = supported.iter().map(|item| item.children.len()).sum();
 
-        let dir_list = UIFileList::new(
+        let supported_list = UIFileList::new(
             format!("Moved {} files", count),
-            files,
+            supported,
             2,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                let supported_h = available / 2;
                 Rect {
                     x: LEFT_MARGIN,
                     y: FILE_LIST_TOP,
                     w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: file_list_h,
+                    h: supported_h,
+                }
+            },
+        );
+
+        let unsupported_list = UIFileList::new(
+            "Unsupported (not moved)".to_string(),
+            unsupported,
+            2,
+            |w: u16, h: u16| {
+                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                let supported_h = available / 2;
+                let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
+                Rect {
+                    x: LEFT_MARGIN,
+                    y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                    h: unsupported_h,
                 }
             },
         );
@@ -455,7 +514,11 @@ impl App {
 
         menu.add_item("Back".to_string(), ACTION_BACK.to_string());
 
-        self.widgets = vec![Box::new(menu), Box::new(dir_list)];
+        self.widgets = vec![
+            Box::new(menu),
+            Box::new(supported_list),
+            Box::new(unsupported_list),
+        ];
     }
 
     fn go_to_duplicates_page(&mut self) {
