@@ -20,6 +20,7 @@ pub fn find_duplicates_async(
     min_file_size_kb: u64,
     max_file_size_kb: u64,
     stage_description: Arc<Mutex<String>>,
+    progress_description: Arc<Mutex<String>>,
     progress: Arc<Mutex<u64>>,
     max: Arc<Mutex<u64>>,
 ) -> Result<HashMap<String, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
@@ -28,9 +29,16 @@ pub fn find_duplicates_async(
         .unwrap_or(1); // fallback на 1
 
     *stage_description.clone().lock().unwrap() = String::from("[Step 1/3] Scanning for files");
+    *progress_description.lock().unwrap() = String::new();
 
-    let mut files_by_sizes =
-        find_same_size_files_recursive_parallel(p, min_file_size_kb, max_file_size_kb, progress.clone(), n_threads)?;
+    let mut files_by_sizes = find_same_size_files_recursive_parallel(
+        p,
+        min_file_size_kb,
+        max_file_size_kb,
+        progress.clone(),
+        progress_description.clone(),
+        n_threads,
+    )?;
 
     let mut files_count_for_partial_hash: u64 = 0;
     let mut files_count_for_full_hash: u64 = 0;
@@ -50,12 +58,17 @@ pub fn find_duplicates_async(
     // step 2 - partial hash
     *progress.lock().unwrap() = 0;
     *max.lock().unwrap() = files_count_for_partial_hash;
-    *stage_description.clone().lock().unwrap() = String::from("[Step 2/3] Calculating potential duplicates");
+    *stage_description.clone().lock().unwrap() =
+        String::from("[Step 2/3] Calculating potential duplicates");
+    *progress_description.lock().unwrap() = String::new();
     let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
-        let mut size_group_partial_hash_map =
-            process_group_partial_hash(file_vec.to_vec(), n_threads);
+        let mut size_group_partial_hash_map = process_group_partial_hash(
+            file_vec.to_vec(),
+            n_threads,
+            progress_description.clone(),
+        );
         *progress.lock().unwrap() += file_vec.len() as u64;
 
         // filtering groups within size groups
@@ -81,10 +94,16 @@ pub fn find_duplicates_async(
     // step 3 - full hash
     *progress.lock().unwrap() = 0;
     *max.lock().unwrap() = files_count_for_full_hash;
-    *stage_description.clone().lock().unwrap() = String::from("[Step 3/3] Evaluating duplicates");
+    *stage_description.clone().lock().unwrap() =
+        String::from("[Step 3/3] Evaluating duplicates");
+    *progress_description.lock().unwrap() = String::new();
     let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for (_, file_vec) in partial_hash_map {
-        let mut phash_group_full_hash_map = process_group_full_hash(file_vec.clone(), n_threads);
+        let mut phash_group_full_hash_map = process_group_full_hash(
+            file_vec.clone(),
+            n_threads,
+            progress_description.clone(),
+        );
 
         *progress.lock().unwrap() += file_vec.len() as u64;
 
@@ -141,6 +160,7 @@ fn read_first_and_last_4kb(path: &Path, file_size: u64) -> Result<[u8; 8192], Bo
 fn process_group_partial_hash(
     file_vec: Vec<Arc<FileInfo>>,
     n_threads: usize,
+    progress_description: Arc<Mutex<String>>,
 ) -> HashMap<String, Vec<Arc<FileInfo>>> {
     let chunk_size = (file_vec.len() + n_threads - 1) / n_threads;
     let chunks: Vec<_> = file_vec.chunks(chunk_size).map(|c| c.to_vec()).collect();
@@ -149,9 +169,11 @@ fn process_group_partial_hash(
         .into_iter()
         .map(|chunk| {
             let chunk = chunk.to_vec(); // клонируем слайс ссылок
+            let progress_description = Arc::clone(&progress_description);
             thread::spawn(move || {
                 let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
                 for file_d in chunk {
+                    *progress_description.lock().unwrap() = file_d.path.display().to_string();
                     let hash = format!("{:x}", md5::compute(&file_d.first_and_last_4kb));
                     local_map.entry(hash).or_default().push(file_d);
                 }
@@ -174,6 +196,7 @@ fn process_group_partial_hash(
 fn process_group_full_hash(
     file_vec: Vec<Arc<FileInfo>>,
     n_threads: usize,
+    progress_description: Arc<Mutex<String>>,
 ) -> HashMap<String, Vec<Arc<FileInfo>>> {
     let chunk_size = (file_vec.len() + n_threads - 1) / n_threads;
     let chunks: Vec<_> = file_vec.chunks(chunk_size).map(|c| c.to_vec()).collect();
@@ -182,9 +205,11 @@ fn process_group_full_hash(
         .into_iter()
         .map(|chunk| {
             let chunk = chunk.to_vec(); // клонируем слайс ссылок
+            let progress_description = Arc::clone(&progress_description);
             thread::spawn(move || {
                 let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
                 for file_d in chunk {
+                    *progress_description.lock().unwrap() = file_d.path.display().to_string();
                     let hash = match file_hash(&file_d.path) {
                         Ok(h) => h,
                         Err(_) => {
@@ -214,6 +239,7 @@ pub fn build_dir_flatmap_parallel(
     min_file_size_kb: u64,
     max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
+    progress_description: Arc<Mutex<String>>,
     max_threads: usize,
 ) -> Vec<Arc<FileInfo>> {
     let dir_map = Arc::new(Mutex::new(Vec::new()));
@@ -224,6 +250,7 @@ pub fn build_dir_flatmap_parallel(
             let path = entry.path();
             let dir_map_clone = Arc::clone(&dir_map);
             let files_read_clone = Arc::clone(&files_read);
+            let progress_description_clone = Arc::clone(&progress_description);
 
             if path.is_dir() {
                 // Ограничиваем количество потоков
@@ -239,12 +266,15 @@ pub fn build_dir_flatmap_parallel(
                         min_file_size_kb,
                         max_file_size_kb,
                         files_read_clone,
+                        progress_description_clone,
                         max_threads,
                     );
                     let mut dm = dir_map_clone.lock().unwrap();
                     dm.extend(child_files);
                 }));
             } else if path.is_file() && !path.is_symlink() {
+                *progress_description_clone.lock().unwrap() =
+                    format!("Scanning: {}", path.display());
                 if let Ok(meta) = entry.metadata() {
                     let file_size = meta.len();
                     if file_size < min_file_size_kb || file_size > max_file_size_kb {
@@ -280,6 +310,7 @@ pub fn find_same_size_files_recursive_parallel(
     min_file_size_kb: u64,
     max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
+    progress_description: Arc<Mutex<String>>,
     max_threads: usize,
 ) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
     let files = build_dir_flatmap_parallel(
@@ -287,6 +318,7 @@ pub fn find_same_size_files_recursive_parallel(
         min_file_size_kb,
         max_file_size_kb,
         Arc::clone(&files_read),
+        progress_description,
         max_threads,
     );
 
