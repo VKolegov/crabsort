@@ -203,10 +203,7 @@ impl App {
     }
 
     fn check_sort_thread(&mut self) {
-        let finished = self
-            .sort_thread
-            .as_ref()
-            .is_some_and(|h| h.is_finished());
+        let finished = self.sort_thread.as_ref().is_some_and(|h| h.is_finished());
 
         if finished {
             let handle = self.sort_thread.take().unwrap();
@@ -236,7 +233,9 @@ impl App {
                     self.show_input_dialogue("Input min size (in kilobytes)".into());
                 }
                 (MENU_CONFIRM_SORT, ACTION_CONFIRM) => self.handle_confirm_sort(),
-                (MENU_CONFIRM_SORT, "no") | (MENU_SORT_SUCCESS, ACTION_BACK) | (MENU_DUPLICATES, ACTION_BACK) => {
+                (MENU_CONFIRM_SORT, "no")
+                | (MENU_SORT_SUCCESS, ACTION_BACK)
+                | (MENU_DUPLICATES, ACTION_BACK) => {
                     self.pending_sort = None;
                     self.go_to_first_page()
                 }
@@ -370,7 +369,6 @@ impl App {
     }
 
     fn handle_find_duplicates(&mut self) {
-
         let desc = Arc::new(Mutex::new(String::new()));
         let progress_desc = Arc::new(Mutex::new(String::new()));
 
@@ -598,8 +596,12 @@ impl App {
     }
 
     fn show_input_dialogue(&mut self, title: String) {
-        let input_dialogue =
-            UIInputDialog::new(INPUT_DIALOG, title, self.bus.clone(), |bw: u16, bh: u16| {
+        let input_dialogue = UIInputDialog::new(
+            INPUT_DIALOG,
+            title,
+            Some(String::from("1024")),
+            self.bus.clone(),
+            |bw: u16, bh: u16| {
                 let h = 5;
                 let w = bw - 10;
 
@@ -609,7 +611,8 @@ impl App {
                     w: w,
                     h: h,
                 }
-            });
+            },
+        );
 
         self.important_widget = Some(Box::new(input_dialogue));
     }

@@ -25,12 +25,15 @@ impl<F> UIInputDialog<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    pub fn new(id: &'static str, title: String, bus: EventBus, c: F) -> Self {
+    pub fn new(id: &'static str, title: String, default: Option<String>, bus: EventBus, c: F) -> Self {
         Self {
             id,
             title,
             bus,
-            input: String::new(),
+            input: match default {
+                Some(d) => d,
+                None => String::new(),
+            },
             r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
@@ -72,7 +75,11 @@ where
     fn handle_input(&mut self, key: Key) {
         match key {
             Key::Escape => {
-                self.bus.push(self.id, "cancel".to_string());
+                if self.input.is_empty() {
+                    self.bus.push(self.id, "cancel".to_string());
+                } else {
+                    self.input.clear();
+                }
             }
             Key::Enter => {
                 self.bus.push(self.id, self.input.clone());

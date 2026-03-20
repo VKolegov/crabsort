@@ -116,6 +116,7 @@ impl Default for Cell {
     }
 }
 #[derive(Clone, Copy, PartialEq)]
+#[allow(unused)]
 pub enum Color {
     Reset,
     White,

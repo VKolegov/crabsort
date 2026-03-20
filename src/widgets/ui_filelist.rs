@@ -43,12 +43,12 @@ where
         }
     }
 
-    pub fn flatten(&mut self) {
-
-        let mut lines: Vec<String> = Vec::new();
-        flatten_tree(&self.items, self.max_depth, 0, &mut lines);
-        self.lines = lines;
-    }
+    // pub fn flatten(&mut self) {
+    //
+    //     let mut lines: Vec<String> = Vec::new();
+    //     flatten_tree(&self.items, self.max_depth, 0, &mut lines);
+    //     self.lines = lines;
+    // }
 }
 
 impl<F> Widget for UIFileList<F>
