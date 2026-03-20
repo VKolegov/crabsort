@@ -1,6 +1,4 @@
-use crate::{
-    buffer::{Buffer, Color},
-};
+use crate::buffer::{Buffer, Color};
 
 #[derive(Clone)]
 pub struct Rect {
@@ -59,7 +57,6 @@ pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
     }
 }
 
-
 pub fn draw_string_list_flat(
     buf: &mut Buffer,
     r: &Rect,
@@ -68,6 +65,7 @@ pub fn draw_string_list_flat(
     scroll_offset: usize,
     highlighted_n: usize,
     focused: bool,
+    selected: Option<Vec<usize>>,
 ) {
     draw_box(buf, r, title, focused);
 
@@ -85,16 +83,32 @@ pub fn draw_string_list_flat(
             break;
         }
 
-        let selected = highlighted_n == item_idx;
+        let item_highlighted = highlighted_n == item_idx;
+
+        let item_selected = selected.as_ref()
+            .map_or(false, |v| v.contains(&item_idx));
 
         let line: String = lines[item_idx].chars().take(inner_w).collect();
-        
-        let (fg, bg) = if selected && focused {
-            (Color::Black, Color::Yellow)
-        } else if selected {
-            (Color::Black, Color::Grey)
-        } else {
-            (Color::White, Color::Reset)
+
+        let (fg, bg) = match focused {
+            true => {
+                if item_highlighted {
+                    (Color::Black, Color::Yellow)
+                } else if item_selected {
+                    (Color::Black, Color::Green) 
+                } else {
+                    (Color::White, Color::Reset)
+                }
+            }
+            false => {
+                if item_highlighted {
+                    (Color::Black, Color::Grey)
+                } else if item_selected {
+                    (Color::Green, Color::Black) 
+                } else {
+                    (Color::White, Color::Reset)
+                }
+            }
         };
 
         fill_rect(
@@ -110,14 +124,6 @@ pub fn draw_string_list_flat(
             bg,
         );
 
-        buf.put_str(
-            r.x + lm as u16,
-            r.y + (tm + i) as u16,
-            &line,
-            fg,
-            bg,
-        );
+        buf.put_str(r.x + lm as u16, r.y + (tm + i) as u16, &line, fg, bg);
     }
 }
-
-

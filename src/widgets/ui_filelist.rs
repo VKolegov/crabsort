@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     buffer::Buffer,
     term::Key,
@@ -19,7 +21,7 @@ where
     title: String,
     max_depth: usize,
     selected_n: usize,
-    selected: Vec<usize>,
+    selected: HashSet<usize>,
     scroll_offset: usize,
 
     items: Vec<FileTreeItem>,
@@ -34,7 +36,6 @@ where
     F: Fn(u16, u16) -> Rect,
 {
     pub fn new(title: String, items: Vec<FileTreeItem>, max_depth: usize, c: F) -> Self {
-
         let mut lines: Vec<String> = Vec::new();
         flatten_tree(&items, max_depth, 0, &mut lines);
 
@@ -42,11 +43,11 @@ where
             title,
             items,
             selected_n: 0,
-            selected: vec![],
+            selected: HashSet::new(),
             max_depth,
             scroll_offset: 0,
             lines,
-            r: Rect::new(0,0,0,0),
+            r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
     }
@@ -64,12 +65,13 @@ where
     F: Fn(u16, u16) -> Rect,
 {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
-        self.r = (self.layout_cb)(w,h);
+        self.r = (self.layout_cb)(w, h);
     }
     fn draw(&mut self, buffer: &mut Buffer, focused: bool) {
         if self.r.h == 0 || self.r.w == 0 {
             self.handle_buf_size_change(buffer.width, buffer.height);
         }
+        let selected_items: Vec<usize> = self.selected.clone().into_iter().collect();
         draw_string_list_flat(
             buffer,
             &self.r,
@@ -78,6 +80,7 @@ where
             self.scroll_offset,
             self.selected_n,
             focused,
+            Some(selected_items),
         );
     }
 
@@ -93,11 +96,11 @@ where
             }
             Key::Char('j') => {
                 let l = self.lines.len();
-                                                 //
+                //
                 if self.selected_n < l - 1 {
                     self.selected_n += 1;
                 }
-                
+
                 let h = (self.r.h - 2) as usize; // 2 lines margin
                 if l < h {
                     return;
@@ -106,17 +109,23 @@ where
                 let max_scroll = l - h; //e.g. 20 lines, height is 15, max scroll is 5
                 // or offset is at the bottom already
                 if self.scroll_offset >= max_scroll {
-                    return
+                    return;
                 }
                 if (self.scroll_offset + self.selected_n + 1) >= h {
                     self.scroll_offset += 1;
+                }
+            }
+            Key::Space => {
+                if self.selected.contains(&self.selected_n) {
+                    self.selected.remove(&self.selected_n);
+                } else {
+                    self.selected.insert(self.selected_n);
                 }
             }
             _ => (),
         }
     }
 }
-
 
 fn flatten_tree(items: &[FileTreeItem], max_depth: usize, depth: usize, out: &mut Vec<String>) {
     if depth >= max_depth {
@@ -128,4 +137,3 @@ fn flatten_tree(items: &[FileTreeItem], max_depth: usize, depth: usize, out: &mu
         flatten_tree(&item.children, max_depth, depth + 1, out);
     }
 }
-
