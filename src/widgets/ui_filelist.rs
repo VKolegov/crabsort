@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    buffer::Buffer,
-    term::Key,
-    ui::{Rect, draw_string_list_flat},
+    buffer::Buffer, event_bus::EventBus, term::Key, ui::{Rect, draw_string_list_flat}
 };
 
 use super::widget::Widget;
@@ -27,6 +25,8 @@ where
     items: Vec<FileTreeItem>,
     lines: Vec<String>,
 
+    bus: EventBus,
+
     r: Rect,
     layout_cb: F,
 }
@@ -35,7 +35,13 @@ impl<F> UIFileList<F>
 where
     F: Fn(u16, u16) -> Rect,
 {
-    pub fn new(title: String, items: Vec<FileTreeItem>, max_depth: usize, c: F) -> Self {
+    pub fn new(
+        title: String,
+        items: Vec<FileTreeItem>,
+        max_depth: usize,
+        bus: EventBus,
+        c: F,
+    ) -> Self {
         let mut lines: Vec<String> = Vec::new();
         flatten_tree(&items, max_depth, 0, &mut lines);
 
@@ -47,6 +53,7 @@ where
             max_depth,
             scroll_offset: 0,
             lines,
+            bus,
             r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }

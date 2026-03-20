@@ -7,8 +7,8 @@ mod term;
 mod ui;
 mod widgets;
 
-use crate::widgets::FileTreeItem;
 use crate::ui::Rect;
+use crate::widgets::FileTreeItem;
 use crate::{
     event_bus::EventBus,
     file_duplicates::{FileInfo, find_duplicates_async},
@@ -40,6 +40,27 @@ const MENU_MARGIN_BOTTOM: u16 = 1;
 
 const FILE_LIST_TOP: u16 = 2;
 const FILE_LIST_GAP: u16 = 2;
+
+static DIR_LIST_SIZE: fn(u16, u16) -> Rect = |w: u16, h: u16| {
+    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+    let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+    Rect {
+        x: LEFT_MARGIN,
+        y: FILE_LIST_TOP,
+        w: w - LEFT_MARGIN - RIGHT_MARGIN,
+        h: file_list_h,
+    }
+};
+
+static MAIN_MENU_SIZE: fn(u16, u16) -> Rect = |w: u16, h: u16| {
+    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+    Rect {
+        x: LEFT_MARGIN,
+        y: menu_y,
+        w: w - LEFT_MARGIN - RIGHT_MARGIN,
+        h: MENU_HEIGHT,
+    }
+};
 
 struct App {
     dir: PathBuf,
@@ -308,13 +329,14 @@ impl App {
                     format!("{} | Files to move", self.dir.display()),
                     supported,
                     2,
+                    self.bus.clone(),
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
                         let supported_h = available / 2;
                         Rect {
                             x: LEFT_MARGIN,
-                            y: FILE_LIST_TOP,
+                            y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
                             w: w - LEFT_MARGIN - RIGHT_MARGIN,
                             h: supported_h,
                         }
@@ -325,6 +347,7 @@ impl App {
                     "Unsupported (not moved)".to_string(),
                     unsupported,
                     2,
+                    self.bus.clone(),
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -344,15 +367,7 @@ impl App {
                     "Confirm action".to_string(),
                     vec![],
                     self.bus.clone(),
-                    |w: u16, h: u16| {
-                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                        Rect {
-                            x: LEFT_MARGIN,
-                            y: menu_y,
-                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                            h: MENU_HEIGHT,
-                        }
-                    },
+                    MAIN_MENU_SIZE,
                 );
 
                 menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
@@ -418,16 +433,8 @@ impl App {
             self.dir.display().to_string(),
             dir_files,
             2,
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: FILE_LIST_TOP,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: file_list_h,
-                }
-            },
+            self.bus.clone(),
+            DIR_LIST_SIZE,
         );
 
         let mut menu = UIMenu::new(
@@ -435,15 +442,7 @@ impl App {
             "crabsort".to_string(),
             vec![],
             self.bus.clone(),
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: menu_y,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: MENU_HEIGHT,
-                }
-            },
+            MAIN_MENU_SIZE,
         );
 
         menu.add_item("Sort by type".to_string(), ACTION_SORT.to_string());
@@ -464,6 +463,7 @@ impl App {
             format!("Moved {} files", count),
             supported,
             2,
+            self.bus.clone(),
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -481,6 +481,7 @@ impl App {
             "Unsupported (not moved)".to_string(),
             unsupported,
             2,
+            self.bus.clone(),
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -500,15 +501,7 @@ impl App {
             format!("Done! Moved {} files.", count),
             vec![],
             self.bus.clone(),
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: menu_y,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: MENU_HEIGHT,
-                }
-            },
+            MAIN_MENU_SIZE,
         );
 
         menu.add_item("Back".to_string(), ACTION_BACK.to_string());
@@ -561,31 +554,14 @@ impl App {
             total_size / 1024 / 1024,
         );
 
-        let dir_list = UIFileList::new(title, dir_files, 2, |w: u16, h: u16| {
-            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-            let file_list_h = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-            Rect {
-                x: LEFT_MARGIN,
-                y: FILE_LIST_TOP,
-                w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                h: file_list_h,
-            }
-        });
+        let dir_list = UIFileList::new(title, dir_files, 2, self.bus.clone(), DIR_LIST_SIZE);
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,
             "Duplicates deletion".to_string(),
             vec![],
             self.bus.clone(),
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: menu_y,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: MENU_HEIGHT,
-                }
-            },
+            MAIN_MENU_SIZE,
         );
 
         menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
