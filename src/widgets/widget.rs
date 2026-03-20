@@ -5,3 +5,4 @@ pub trait Widget {
     fn draw(&mut self, buffer: &mut Buffer, focused: bool);
     fn handle_input(&mut self, key: Key);
 }
+

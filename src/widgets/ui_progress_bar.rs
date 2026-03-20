@@ -8,29 +8,23 @@ use crate::{
 
 use super::widget::Widget;
 
-pub struct UIProgressBar<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+pub struct UIProgressBar {
     title: Arc<Mutex<String>>,
     description: Option<Arc<Mutex<String>>>,
     current: Arc<Mutex<u64>>,
     max: Arc<Mutex<u64>>,
 
     r: Rect,
-    layout_cb: F,
+    layout_cb: fn(u16, u16) -> Rect,
 }
 
-impl<F> UIProgressBar<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl UIProgressBar {
     pub fn new(
         title: Arc<Mutex<String>>,
         desc: Option<Arc<Mutex<String>>>,
         current: Arc<Mutex<u64>>,
         max: Arc<Mutex<u64>>,
-        c: F,
+        c: fn(u16, u16) -> Rect,
     ) -> Self {
         Self {
             title,
@@ -43,10 +37,7 @@ where
     }
 }
 
-impl<F> Widget for UIProgressBar<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl Widget for UIProgressBar {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
         self.r = (self.layout_cb)(w, h);
     }

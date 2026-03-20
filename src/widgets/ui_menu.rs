@@ -10,10 +10,7 @@ pub struct MenuItem {
     pub event: String,
 }
 
-pub struct UIMenu<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+pub struct UIMenu {
     id: &'static str,
     title: String,
     selected_n: usize,
@@ -22,14 +19,11 @@ where
 
     r: Rect,
 
-    layout_cb: F,
+    layout_cb: fn(u16, u16) -> Rect,
 }
 
-impl<F> UIMenu<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
-    pub fn new(id: &'static str, title: String, items: Vec<MenuItem>, bus: EventBus, c: F) -> Self {
+impl UIMenu {
+    pub fn new(id: &'static str, title: String, items: Vec<MenuItem>, bus: EventBus, c: fn(u16, u16) -> Rect) -> Self {
         Self {
             id,
             title,
@@ -46,10 +40,7 @@ where
     }
 }
 
-impl<F> Widget for UIMenu<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl Widget for UIMenu {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
         self.r = (self.layout_cb)(w, h);
     }

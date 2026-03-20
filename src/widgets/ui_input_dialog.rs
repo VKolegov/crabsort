@@ -7,10 +7,7 @@ use crate::{
 
 use super::widget::Widget;
 
-pub struct UIInputDialog<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+pub struct UIInputDialog {
     id: &'static str,
     title: String,
     bus: EventBus,
@@ -18,14 +15,11 @@ where
     input: String,
 
     r: Rect,
-    layout_cb: F,
+    layout_cb: fn(u16, u16) -> Rect,
 }
 
-impl<F> UIInputDialog<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
-    pub fn new(id: &'static str, title: String, default: Option<String>, bus: EventBus, c: F) -> Self {
+impl UIInputDialog {
+    pub fn new(id: &'static str, title: String, default: Option<String>, bus: EventBus, c: fn(u16, u16) -> Rect) -> Self {
         Self {
             id,
             title,
@@ -40,10 +34,7 @@ where
     }
 }
 
-impl<F> Widget for UIInputDialog<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl Widget for UIInputDialog {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
         self.r = (self.layout_cb)(w, h);
     }

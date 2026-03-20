@@ -12,10 +12,7 @@ pub struct FileTreeItem {
     pub children: Vec<FileTreeItem>,
 }
 
-pub struct UIFileList<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+pub struct UIFileList {
     title: String,
     max_depth: usize,
     selected_n: usize,
@@ -28,19 +25,16 @@ where
     bus: EventBus,
 
     r: Rect,
-    layout_cb: F,
+    layout_cb: fn(u16, u16) -> Rect,
 }
 
-impl<F> UIFileList<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl UIFileList {
     pub fn new(
         title: String,
         items: Vec<FileTreeItem>,
         max_depth: usize,
         bus: EventBus,
-        c: F,
+        c: fn(u16, u16) -> Rect,
     ) -> Self {
         let mut lines: Vec<String> = Vec::new();
         flatten_tree(&items, max_depth, 0, &mut lines);
@@ -67,10 +61,7 @@ where
     // }
 }
 
-impl<F> Widget for UIFileList<F>
-where
-    F: Fn(u16, u16) -> Rect,
-{
+impl Widget for UIFileList {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
         self.r = (self.layout_cb)(w, h);
     }
