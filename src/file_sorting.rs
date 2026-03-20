@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{file_types::{detect_file_type, type_dir}, ui::FileTreeItem};
+use crate::{file_types::{detect_file_type, type_dir}, widgets::FileTreeItem};
 
 pub fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<FileTreeItem>, Box<dyn Error>> {
     traverse_dir(p, dry, false).map(|map| {

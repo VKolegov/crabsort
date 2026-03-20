@@ -5,7 +5,7 @@ mod ui_input_dialog;
 mod ui_progress_bar;
 
 pub use widget::Widget;
-pub use ui_menu::UIMenu;
-pub use ui_filelist::UIFileList;
-pub use ui_input_dialog::UIInputDialog;
-pub use ui_progress_bar::UIProgressBar;
+pub use ui_menu::*;
+pub use ui_filelist::*;
+pub use ui_input_dialog::*;
+pub use ui_progress_bar::*;

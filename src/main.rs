@@ -7,12 +7,13 @@ mod term;
 mod ui;
 mod widgets;
 
+use crate::widgets::FileTreeItem;
+use crate::ui::Rect;
 use crate::{
     event_bus::EventBus,
     file_duplicates::{FileInfo, find_duplicates_async},
     file_sorting::{fix_duplicates_in_dir, move_files_with_progress},
     term::read_key,
-    ui::{FileTreeItem, Rect},
     widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget},
 };
 use std::{

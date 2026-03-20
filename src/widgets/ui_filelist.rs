@@ -1,10 +1,16 @@
 use crate::{
     buffer::Buffer,
     term::Key,
-    ui::{FileTreeItem, Rect, draw_string_list_flat},
+    ui::{Rect, draw_string_list_flat},
 };
 
 use super::widget::Widget;
+
+#[derive(Clone)]
+pub struct FileTreeItem {
+    pub path: String,
+    pub children: Vec<FileTreeItem>,
+}
 
 pub struct UIFileList<F>
 where
@@ -13,6 +19,7 @@ where
     title: String,
     max_depth: usize,
     selected_n: usize,
+    selected: Vec<usize>,
     scroll_offset: usize,
 
     items: Vec<FileTreeItem>,
@@ -35,6 +42,7 @@ where
             title,
             items,
             selected_n: 0,
+            selected: vec![],
             max_depth,
             scroll_offset: 0,
             lines,

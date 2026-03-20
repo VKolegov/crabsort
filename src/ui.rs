@@ -59,16 +59,6 @@ pub fn fill_rect(buf: &mut Buffer, r: &Rect, c: char, fg: Color, bg: Color) {
     }
 }
 
-pub struct MenuItem {
-    pub label: String,
-    pub event: String,
-}
-
-#[derive(Clone)]
-pub struct FileTreeItem {
-    pub path: String,
-    pub children: Vec<FileTreeItem>,
-}
 
 pub fn draw_string_list_flat(
     buf: &mut Buffer,
@@ -131,56 +121,3 @@ pub fn draw_string_list_flat(
 }
 
 
-pub fn draw_menu(buf: &mut Buffer, r: &Rect, title: &str, items: &[MenuItem], selected_i: usize, focused: bool) {
-    draw_box(buf, r, title, focused);
-
-    let rm: usize = 2;
-    let lm = 2;
-    let tm = 1;
-    let bm: usize = 1;
-
-    let inner_w = (r.w as usize) - rm - lm as usize;
-    let inner_h = (r.h as usize) - tm - bm as usize;
-
-    for i in 0..inner_h {
-        if i >= items.len() {
-            break;
-        }
-
-        let item = &items[i];
-
-        let selected = i == selected_i;
-
-        let label: String = item
-            .label
-            .chars()
-            .take(inner_w.saturating_sub(rm + bm))
-            .collect();
-        let check = if selected { ">" } else { " " };
-
-        let line = format!(" {} {}", check, label);
-
-        let (fg, bg) = if selected && focused {
-            (Color::Black, Color::Yellow)
-        } else if selected {
-            (Color::Black, Color::Grey)
-        } else {
-            (Color::White, Color::Reset)
-        };
-
-        fill_rect(
-            buf,
-            &Rect {
-                x: r.x + (lm as u16),
-                y: r.y + (tm + i) as u16,
-                w: inner_w as u16,
-                h: 1,
-            },
-            ' ',
-            fg,
-            bg,
-        );
-
-        buf.put_str(r.x + (rm as u16), r.y + (tm + i) as u16, &line, fg, bg);
-    }
-}
