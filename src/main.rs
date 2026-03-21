@@ -332,6 +332,7 @@ impl App {
                     supported,
                     2,
                     Some(self.sort_selected.clone()),
+                    true,
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -350,6 +351,7 @@ impl App {
                     unsupported,
                     2,
                     None,
+                    false,
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -427,6 +429,7 @@ impl App {
             dir_files,
             2,
             None,
+            false,
             DIR_LIST_SIZE,
         );
 
@@ -457,6 +460,7 @@ impl App {
             supported,
             2,
             None,
+            false,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -475,6 +479,7 @@ impl App {
             unsupported,
             2,
             None,
+            false,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -547,7 +552,8 @@ impl App {
             total_size / 1024 / 1024,
         );
 
-        let dir_list = UIFileList::new(title, dir_files, 2, None, DIR_LIST_SIZE);
+        // TODO: select oldest
+        let dir_list = UIFileList::new(title, dir_files, 2, None, false, DIR_LIST_SIZE);
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,

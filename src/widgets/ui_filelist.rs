@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::{HashSet},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use crate::{
     buffer::Buffer,
@@ -41,6 +37,7 @@ impl UIFileList {
         items: Vec<FileTreeItem>,
         max_depth: usize,
         output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
+        preselect_all: bool,
         c: fn(u16, u16) -> Rect,
     ) -> Self {
         let mut lines: Vec<String> = Vec::new();
@@ -52,8 +49,10 @@ impl UIFileList {
         let mut selected = HashSet::new();
 
         for (i, item) in items.iter().enumerate() {
-            for (j, _child) in item.children.iter().enumerate() {
-                selected.insert((i, j));
+            if preselect_all {
+                for (j, _child) in item.children.iter().enumerate() {
+                    selected.insert((i, j));
+                }
             }
 
             group_offsets[i] = if i > 0 {
