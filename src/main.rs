@@ -1,7 +1,8 @@
 mod buffer;
 mod event_bus;
 mod file_duplicates;
-mod file_sorting; mod file_types;
+mod file_sorting;
+mod file_types;
 mod term;
 mod ui;
 mod widgets;
@@ -9,7 +10,7 @@ mod widgets;
 use libc::{PR_SET_PTRACER, PR_SET_PTRACER_ANY, prctl};
 
 use crate::ui::Rect;
-use crate::widgets::{FileTreeItem, UIGroupedList, UIGroupedListItem};
+use crate::widgets::{FileTreeItem, UIGroupedList, UIGroupedListItem, UIStatusBar};
 use crate::{
     event_bus::EventBus,
     file_duplicates::{FileInfo, find_duplicates_async},
@@ -94,6 +95,8 @@ struct App {
     sort_thread: Option<JoinHandle<Option<Vec<UIGroupedListItem>>>>,
     sort_selected: Rc<RefCell<Vec<UIGroupedListItem>>>,
 
+    status_bar: UIStatusBar,
+
     quit: bool,
 }
 
@@ -111,7 +114,9 @@ const ACTION_QUIT: &str = "quit";
 
 const INPUT_DIALOG: &str = "input_test";
 
-fn split_supported_unsupported(items: Vec<UIGroupedListItem>) -> (Vec<UIGroupedListItem>, Vec<UIGroupedListItem>) {
+fn split_supported_unsupported(
+    items: Vec<UIGroupedListItem>,
+) -> (Vec<UIGroupedListItem>, Vec<UIGroupedListItem>) {
     let mut supported = Vec::new();
     let mut unsupported = Vec::new();
     for item in items {
@@ -126,6 +131,16 @@ fn split_supported_unsupported(items: Vec<UIGroupedListItem>) -> (Vec<UIGroupedL
 
 impl App {
     fn new(dir: PathBuf) -> Self {
+        let status_bar = UIStatusBar::new(
+            " Tab:switch focus | j/k:navigate | Space:toggle selection | q:quit".to_string(),
+            |w: u16, h: u16| Rect {
+                x: 0,
+                y: h - 1,
+                w: w,
+                h: 1,
+            },
+        );
+
         Self {
             dir,
             widgets: vec![],
@@ -140,6 +155,7 @@ impl App {
             sort_thread: None,
             latest_input: None,
             sort_selected: Rc::new(RefCell::new(Vec::new())),
+            status_bar,
             quit: false,
         }
     }
@@ -189,6 +205,7 @@ impl App {
         if let Some(w) = self.important_widget.as_mut() {
             w.draw(&mut self.buffer, true);
         }
+        self.status_bar.draw(&mut self.buffer, false);
     }
 
     fn handle_input(&mut self) -> bool {
@@ -296,7 +313,6 @@ impl App {
     }
 
     fn handle_confirm_sort(&mut self) {
-
         let plan = self.sort_selected.borrow().to_vec();
 
         let desc = Arc::new(Mutex::new("Moving files...".to_string()));
@@ -598,7 +614,6 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-
     unsafe {
         prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
     }
