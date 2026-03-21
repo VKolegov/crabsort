@@ -6,6 +6,8 @@ mod term;
 mod ui;
 mod widgets;
 
+use libc::{PR_SET_PTRACER, PR_SET_PTRACER_ANY, prctl};
+
 use crate::ui::Rect;
 use crate::widgets::FileTreeItem;
 use crate::{
@@ -90,9 +92,7 @@ struct App {
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
     sort_thread: Option<JoinHandle<Option<Vec<FileTreeItem>>>>,
-    // sort_selected: Rc<RefCell<HashMap<String, Vec<String>>>>,
     sort_selected: Rc<RefCell<Vec<FileTreeItem>>>,
-    // pending_sort: Option<Vec<FileTreeItem>>,
 
     quit: bool,
 }
@@ -138,9 +138,7 @@ impl App {
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             duplicates_thread: None,
             sort_thread: None,
-            // pending_sort: None,
             latest_input: None,
-            // sort_selected: Rc::new(RefCell::new(HashMap::new())),
             sort_selected: Rc::new(RefCell::new(Vec::new())),
             quit: false,
         }
@@ -273,7 +271,6 @@ impl App {
                 (MENU_CONFIRM_SORT, "no")
                 | (MENU_SORT_SUCCESS, ACTION_BACK)
                 | (MENU_DUPLICATES, ACTION_BACK) => {
-                    // self.pending_sort = None;
                     self.sort_selected.borrow_mut().clear();
                     self.go_to_first_page()
                 }
@@ -299,10 +296,6 @@ impl App {
     }
 
     fn handle_confirm_sort(&mut self) {
-        // let Some(plan) = self.pending_sort.take() else {
-        //     self.go_to_first_page();
-        //     return;
-        // };
 
         let plan = self.sort_selected.borrow().to_vec();
 
@@ -330,7 +323,6 @@ impl App {
         match fix_duplicates_in_dir(&self.dir, dry) {
             Ok(files) => {
                 if dry {
-                    // self.pending_sort = Some(files.clone());
                     *self.sort_selected.borrow_mut() = files.clone();
                 }
                 let (supported, unsupported) = split_supported_unsupported(files);
@@ -339,7 +331,6 @@ impl App {
                     format!("{} | Files to move", self.dir.display()),
                     supported,
                     2,
-                    self.bus.clone(),
                     Some(self.sort_selected.clone()),
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
@@ -358,7 +349,6 @@ impl App {
                     "Unsupported (not moved)".to_string(),
                     unsupported,
                     2,
-                    self.bus.clone(),
                     None,
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
@@ -436,7 +426,6 @@ impl App {
             self.dir.display().to_string(),
             dir_files,
             2,
-            self.bus.clone(),
             None,
             DIR_LIST_SIZE,
         );
@@ -467,7 +456,6 @@ impl App {
             format!("Moved {} files", count),
             supported,
             2,
-            self.bus.clone(),
             None,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
@@ -486,7 +474,6 @@ impl App {
             "Unsupported (not moved)".to_string(),
             unsupported,
             2,
-            self.bus.clone(),
             None,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
@@ -560,7 +547,7 @@ impl App {
             total_size / 1024 / 1024,
         );
 
-        let dir_list = UIFileList::new(title, dir_files, 2, self.bus.clone(), None, DIR_LIST_SIZE);
+        let dir_list = UIFileList::new(title, dir_files, 2, None, DIR_LIST_SIZE);
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,
@@ -603,12 +590,17 @@ impl App {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {e}");
+        eprintln!("Error: {e}");;
         process::exit(1);
     }
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
+
+    unsafe {
+        prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
+    }
+
     let (dir, _) = parse_args()?;
 
     term::enable_raw_mode();

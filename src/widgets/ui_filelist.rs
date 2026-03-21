@@ -1,12 +1,11 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashSet},
     rc::Rc,
 };
 
 use crate::{
     buffer::Buffer,
-    event_bus::EventBus,
     term::Key,
     ui::{Rect, draw_string_list_flat},
 };
@@ -22,17 +21,15 @@ pub struct FileTreeItem {
 pub struct UIFileList {
     title: String,
     max_depth: usize,
-    selected_n: usize,
-    selected: HashSet<usize>,
+    highlighted_line: usize,
+    selected: HashSet<(usize, usize)>,
     scroll_offset: usize,
 
     items: Vec<FileTreeItem>,
     lines: Vec<String>,
 
-    bus: EventBus,
     output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
-    m: HashMap<usize, (usize, usize)>,
-    r_m: HashMap<(usize, usize), usize>,
+    group_offsets: Vec<usize>,
 
     r: Rect,
     layout_cb: fn(u16, u16) -> Rect,
@@ -43,75 +40,92 @@ impl UIFileList {
         title: String,
         items: Vec<FileTreeItem>,
         max_depth: usize,
-        bus: EventBus,
-        // output: Option<Rc<RefCell<HashMap<String, Vec<String>>>>>,
         output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
         c: fn(u16, u16) -> Rect,
     ) -> Self {
         let mut lines: Vec<String> = Vec::new();
         flatten_tree(&items, max_depth, 0, &mut lines);
 
-        let mut m = HashMap::<usize, (usize, usize)>::new();
-        let mut r_m = HashMap::<(usize, usize), usize>::new();
+        let mut group_offsets = Vec::new();
+        group_offsets.resize(items.len(), 0);
 
         let mut selected = HashSet::new();
 
-        let mut count = 1;
         for (i, item) in items.iter().enumerate() {
-            let pidor = FileTreeItem {
-                path: item.path.clone(),
-                children: vec![],
-            };
-
             for (j, _child) in item.children.iter().enumerate() {
-                m.insert(count + j, (i, j));
-                r_m.insert((i, j), count + j);
-                selected.insert(count + j);
+                selected.insert((i, j));
             }
 
-            if let Some(rc) = &output {
-                rc.borrow_mut().push(pidor);
+            group_offsets[i] = if i > 0 {
+                items[i - 1].children.len() + 1
+            } else {
+                0
             }
-            count += item.children.len() + 1;
         }
 
         Self {
             title,
             items,
-            selected_n: 0,
+            highlighted_line: 0,
             selected,
             max_depth,
             scroll_offset: 0,
             lines,
-            bus,
             output,
-            m,
-            r_m,
+            group_offsets,
             r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
     }
 
+    // 3 groups: 2, 3, 1
+    // 0 -> None
+    // 1 -> 0,0
+    // 2 -> 0,1
+    // 3 -> None
+    // 4 -> 1,0
+    // 5 -> 1,1
+    // 6 -> 1,2
+    fn flat_to_coords(&self, n: usize) -> Option<(usize, usize)> {
+        for (i, item) in self.items.iter().enumerate() {
+            for (j, _) in item.children.iter().enumerate() {
+                if self.coords_to_flat(i, j) == n {
+                    return Some((i, j));
+                }
+            }
+        }
+        None
+    }
+
+    fn coords_to_flat(&self, i: usize, j: usize) -> usize {
+        self.group_offsets[i] + 1 + j
+    }
+
     fn refresh_output(&self) -> Vec<FileTreeItem> {
         let mut m: Vec<FileTreeItem> = vec![];
 
-        let mut current_line: usize = 0;
-        for file_group in &self.items {
-            for f_f in &file_group.children {
-                current_line += 1;
-                let mut children = vec![];
-                if self.selected.contains(&current_line) {
-                    children.push(f_f.clone());
-                }
+        for (i, group) in self.items.iter().enumerate() {
+            let children: Vec<FileTreeItem> = group
+                .children
+                .iter()
+                .enumerate()
+                .filter_map(|(f_j, file)| {
+                    if !&self.selected.contains(&(i, f_j)) {
+                        return None;
+                    }
 
-                if children.len() > 0 {
-                    m.push(FileTreeItem {
-                        path: file_group.path.clone(),
-                        children,
-                    });
-                }
+                    Some(FileTreeItem {
+                        path: file.path.clone(),
+                        children: vec![],
+                    })
+                })
+                .collect();
+            if children.len() > 0 {
+                m.push(FileTreeItem {
+                    path: group.path.clone(),
+                    children,
+                });
             }
-            current_line += 1;
         }
         m
     }
@@ -125,26 +139,30 @@ impl Widget for UIFileList {
         if self.r.h == 0 || self.r.w == 0 {
             self.handle_buf_size_change(buffer.width, buffer.height);
         }
-        let selected_items: Vec<usize> = self.selected.clone().into_iter().collect();
+        let selected_lines: Vec<usize> = self
+            .selected
+            .iter()
+            .map(|(i, j)| self.coords_to_flat(*i, *j))
+            .collect();
         draw_string_list_flat(
             buffer,
             &self.r,
             self.title.as_str(),
             &self.lines,
             self.scroll_offset,
-            self.selected_n,
+            self.highlighted_line,
             focused,
-            Some(selected_items),
+            Some(selected_lines),
         );
     }
 
     fn handle_input(&mut self, key: Key) {
         match key {
             Key::Char('k') => {
-                if self.selected_n > 0 {
-                    self.selected_n -= 1;
+                if self.highlighted_line > 0 {
+                    self.highlighted_line -= 1;
                 }
-                if self.scroll_offset > 0 && self.selected_n <= self.scroll_offset + 1 {
+                if self.scroll_offset > 0 && self.highlighted_line <= self.scroll_offset + 1 {
                     self.scroll_offset -= 1;
                 }
             }
@@ -155,8 +173,8 @@ impl Widget for UIFileList {
                     return;
                 }
                 //
-                if self.selected_n < l - 1 {
-                    self.selected_n += 1;
+                if self.highlighted_line < l - 1 {
+                    self.highlighted_line += 1;
                 }
 
                 let h = (self.r.h - 2) as usize; // 2 lines margin
@@ -169,15 +187,19 @@ impl Widget for UIFileList {
                 if self.scroll_offset >= max_scroll {
                     return;
                 }
-                if (self.scroll_offset + self.selected_n + 1) >= h {
+                if (self.scroll_offset + self.highlighted_line + 1) >= h {
                     self.scroll_offset += 1;
                 }
             }
             Key::Space => {
-                if self.selected.contains(&self.selected_n) {
-                    self.selected.remove(&self.selected_n);
+                let Some(coords) = self.flat_to_coords(self.highlighted_line) else {
+                    return;
+                };
+
+                if self.selected.contains(&coords) {
+                    self.selected.remove(&coords);
                 } else {
-                    self.selected.insert(self.selected_n);
+                    self.selected.insert(coords);
                 }
 
                 if let Some(o) = self.output.as_ref() {
