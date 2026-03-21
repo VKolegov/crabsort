@@ -206,10 +206,13 @@ impl App {
                 self.important_widget.is_none() && i == self.selected_widget,
             );
         }
+        let mut has_important_widget = false;
         if let Some(w) = self.important_widget.as_mut() {
             w.draw(&mut self.buffer, true);
+            has_important_widget = true;
         }
-        self.status_bar.draw(&mut self.buffer, false);
+        self.status_bar
+            .draw(&mut self.buffer, !has_important_widget);
     }
 
     fn handle_input(&mut self) -> bool {
