@@ -193,6 +193,10 @@ impl App {
         for widget in self.widgets.iter_mut() {
             widget.handle_buf_size_change(w, h);
         }
+        if let Some(important_w) = self.important_widget.as_mut() {
+            important_w.handle_buf_size_change(w, h);
+        }
+        self.status_bar.handle_buf_size_change(w, h);
     }
 
     fn render(&mut self) {
