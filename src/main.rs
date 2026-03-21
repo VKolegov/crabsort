@@ -9,7 +9,7 @@ mod widgets;
 use libc::{PR_SET_PTRACER, PR_SET_PTRACER_ANY, prctl};
 
 use crate::ui::Rect;
-use crate::widgets::FileTreeItem;
+use crate::widgets::{FileTreeItem, UIGroupedList, UIGroupedListItem};
 use crate::{
     event_bus::EventBus,
     file_duplicates::{FileInfo, find_duplicates_async},
@@ -91,8 +91,8 @@ struct App {
 
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
-    sort_thread: Option<JoinHandle<Option<Vec<FileTreeItem>>>>,
-    sort_selected: Rc<RefCell<Vec<FileTreeItem>>>,
+    sort_thread: Option<JoinHandle<Option<Vec<UIGroupedListItem>>>>,
+    sort_selected: Rc<RefCell<Vec<UIGroupedListItem>>>,
 
     quit: bool,
 }
@@ -111,11 +111,11 @@ const ACTION_QUIT: &str = "quit";
 
 const INPUT_DIALOG: &str = "input_test";
 
-fn split_supported_unsupported(items: Vec<FileTreeItem>) -> (Vec<FileTreeItem>, Vec<FileTreeItem>) {
+fn split_supported_unsupported(items: Vec<UIGroupedListItem>) -> (Vec<UIGroupedListItem>, Vec<UIGroupedListItem>) {
     let mut supported = Vec::new();
     let mut unsupported = Vec::new();
     for item in items {
-        if item.path == "unsupported" {
+        if item.title == "unsupported" {
             unsupported.push(item);
         } else {
             supported.push(item);
@@ -327,10 +327,9 @@ impl App {
                 }
                 let (supported, unsupported) = split_supported_unsupported(files);
 
-                let supported_list = UIFileList::new(
+                let supported_list = UIGroupedList::new(
                     format!("{} | Files to move", self.dir.display()),
                     supported,
-                    2,
                     Some(self.sort_selected.clone()),
                     true,
                     |w: u16, h: u16| {
@@ -346,10 +345,9 @@ impl App {
                     },
                 );
 
-                let unsupported_list = UIFileList::new(
+                let unsupported_list = UIGroupedList::new(
                     "Unsupported (not moved)".to_string(),
                     unsupported,
-                    2,
                     None,
                     false,
                     |w: u16, h: u16| {
@@ -451,14 +449,13 @@ impl App {
         self.widgets = vec![Box::new(menu), Box::new(dir_list)];
     }
 
-    fn go_to_sort_success_page(&mut self, files: Vec<FileTreeItem>) {
+    fn go_to_sort_success_page(&mut self, files: Vec<UIGroupedListItem>) {
         let (supported, unsupported) = split_supported_unsupported(files);
         let count: usize = supported.iter().map(|item| item.children.len()).sum();
 
-        let supported_list = UIFileList::new(
+        let supported_list = UIGroupedList::new(
             format!("Moved {} files", count),
             supported,
-            2,
             None,
             false,
             |w: u16, h: u16| {
@@ -474,10 +471,9 @@ impl App {
             },
         );
 
-        let unsupported_list = UIFileList::new(
+        let unsupported_list = UIGroupedList::new(
             "Unsupported (not moved)".to_string(),
             unsupported,
-            2,
             None,
             false,
             |w: u16, h: u16| {
@@ -596,7 +592,7 @@ impl App {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {e}");;
+        eprintln!("Error: {e}");
         process::exit(1);
     }
 }

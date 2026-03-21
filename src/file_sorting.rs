@@ -6,20 +6,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{file_types::{detect_file_type, type_dir}, widgets::FileTreeItem};
+use crate::{file_types::{detect_file_type, type_dir}, widgets::UIGroupedListItem};
 
-pub fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<FileTreeItem>, Box<dyn Error>> {
+pub fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<UIGroupedListItem>, Box<dyn Error>> {
     traverse_dir(p, dry, false).map(|map| {
         map.into_iter()
-            .map(|(key, files)| FileTreeItem {
-                path: key,
-                children: files
-                    .into_iter()
-                    .map(|f| FileTreeItem {
-                        path: f,
-                        children: Vec::new(),
-                    })
-                    .collect(),
+            .map(|(key, files)| UIGroupedListItem {
+                title: key,
+                children: files.clone(),
             })
             .collect()
     })
@@ -27,35 +21,35 @@ pub fn fix_duplicates_in_dir(p: &Path, dry: bool) -> Result<Vec<FileTreeItem>, B
 
 /// Move files using pre-collected plan. No dir traversal.
 pub fn move_files_with_progress(
-    plan: Vec<FileTreeItem>,
+    plan: Vec<UIGroupedListItem>,
     progress: Arc<Mutex<u64>>,
     max: Arc<Mutex<u64>>,
     description: Arc<Mutex<String>>,
-) -> Result<Vec<FileTreeItem>, Box<dyn Error>> {
+) -> Result<Vec<UIGroupedListItem>, Box<dyn Error>> {
     let total: u64 = plan
         .iter()
-        .filter(|item| item.path != "unsupported")
+        .filter(|item| item.title != "unsupported")
         .map(|item| item.children.len() as u64)
         .sum();
     *max.lock().unwrap() = total;
     *progress.lock().unwrap() = 0;
 
     for item in &plan {
-        if item.path == "unsupported" {
+        if item.title == "unsupported" {
             continue;
         }
-        let target_dir = &item.path;
+        let target_dir = &item.title;
         ensure_dir(target_dir)?;
 
         for child in &item.children {
-            let source = PathBuf::from(&child.path);
+            let source = PathBuf::from(&child);
             let filename = source
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
             let new_path = Path::new(target_dir).join(filename);
 
-            *description.lock().unwrap() = child.path.clone();
+            *description.lock().unwrap() = child.clone();
 
             if let Err(e) = fs::copy(&source, &new_path) {
                 eprintln!(

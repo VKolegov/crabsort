@@ -9,38 +9,37 @@ use crate::{
 use super::widget::Widget;
 
 #[derive(Clone)]
-pub struct FileTreeItem {
-    pub path: String,
-    pub children: Vec<FileTreeItem>,
+pub struct UIGroupedListItem {
+    pub title: String,
+    pub children: Vec<String>,
 }
 
-pub struct UIFileList {
+pub struct UIGroupedList {
     title: String,
     highlighted_line: usize,
     selected: HashSet<(usize, usize)>,
     scroll_offset: usize,
 
-    items: Vec<FileTreeItem>,
+    items: Vec<UIGroupedListItem>,
     lines: Vec<String>,
 
-    output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
+    output: Option<Rc<RefCell<Vec<UIGroupedListItem>>>>,
     group_offsets: Vec<usize>,
 
     r: Rect,
     layout_cb: fn(u16, u16) -> Rect,
 }
 
-impl UIFileList {
+impl UIGroupedList {
     pub fn new(
         title: String,
-        items: Vec<FileTreeItem>,
-        max_depth: usize,
-        output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
+        items: Vec<UIGroupedListItem>,
+        output: Option<Rc<RefCell<Vec<UIGroupedListItem>>>>,
         preselect_all: bool,
         c: fn(u16, u16) -> Rect,
     ) -> Self {
         let mut lines: Vec<String> = Vec::new();
-        flatten_tree(&items, max_depth, 0, &mut lines);
+        flatten_tree(&items, &mut lines);
 
         let mut group_offsets = Vec::new();
         group_offsets.resize(items.len(), 0);
@@ -98,28 +97,25 @@ impl UIFileList {
         self.group_offsets[i] + 1 + j
     }
 
-    fn refresh_output(&self) -> Vec<FileTreeItem> {
-        let mut m: Vec<FileTreeItem> = vec![];
+    fn refresh_output(&self) -> Vec<UIGroupedListItem> {
+        let mut m: Vec<UIGroupedListItem> = vec![];
 
         for (i, group) in self.items.iter().enumerate() {
-            let children: Vec<FileTreeItem> = group
+            let children: Vec<String> = group
                 .children
                 .iter()
                 .enumerate()
-                .filter_map(|(f_j, file)| {
-                    if !&self.selected.contains(&(i, f_j)) {
+                .filter_map(|(g_i, child)| {
+                    if !&self.selected.contains(&(i, g_i)) {
                         return None;
                     }
 
-                    Some(FileTreeItem {
-                        path: file.path.clone(),
-                        children: vec![],
-                    })
+                    Some(child.clone())
                 })
                 .collect();
             if children.len() > 0 {
-                m.push(FileTreeItem {
-                    path: group.path.clone(),
+                m.push(UIGroupedListItem {
+                    title: group.title.clone(),
                     children,
                 });
             }
@@ -128,7 +124,7 @@ impl UIFileList {
     }
 }
 
-impl Widget for UIFileList {
+impl Widget for UIGroupedList {
     fn handle_buf_size_change(&mut self, w: u16, h: u16) {
         self.r = (self.layout_cb)(w, h);
     }
@@ -208,13 +204,11 @@ impl Widget for UIFileList {
     }
 }
 
-fn flatten_tree(items: &[FileTreeItem], max_depth: usize, depth: usize, out: &mut Vec<String>) {
-    if depth >= max_depth {
-        return;
-    }
-    let indent = "    ".repeat(depth);
+fn flatten_tree(items: &[UIGroupedListItem], out: &mut Vec<String>) {
     for item in items {
-        out.push(format!("{}{}", indent, item.path));
-        flatten_tree(&item.children, max_depth, depth + 1, out);
+        out.push(item.title.clone());
+        for child in &item.children {
+            out.push(format!("    {}", child));
+        }
     }
 }
