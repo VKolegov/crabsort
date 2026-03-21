@@ -121,7 +121,14 @@ fn split_supported_unsupported(
     let mut unsupported = Vec::new();
     for item in items {
         if item.title == "unsupported" {
-            unsupported.push(item);
+            unsupported = item
+                .children
+                .iter()
+                .map(|c| UIGroupedListItem {
+                    title: c.clone(),
+                    children: vec![],
+                })
+                .collect();
         } else {
             supported.push(item);
         }
@@ -368,25 +375,6 @@ impl App {
                     },
                 );
 
-                let unsupported_list = UIGroupedList::new(
-                    "Unsupported (not moved)".to_string(),
-                    unsupported,
-                    None,
-                    false,
-                    |w: u16, h: u16| {
-                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                        let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                        let supported_h = available / 2;
-                        let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
-                        Rect {
-                            x: LEFT_MARGIN,
-                            y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
-                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                            h: unsupported_h,
-                        }
-                    },
-                );
-
                 let mut menu = UIMenu::new(
                     MENU_CONFIRM_SORT,
                     "Confirm action".to_string(),
@@ -398,11 +386,32 @@ impl App {
                 menu.add_item("Confirm".to_string(), ACTION_CONFIRM.to_string());
                 menu.add_item("Cancel".to_string(), "no".to_string());
 
-                self.widgets = vec![
-                    Box::new(menu),
-                    Box::new(supported_list),
-                    Box::new(unsupported_list),
-                ];
+                self.widgets = vec![Box::new(menu), Box::new(supported_list)];
+
+                if unsupported.len() > 0 {
+                    let unsupported_list = UIGroupedList::new(
+                        "Unsupported (will not be moved)".to_string(),
+                        unsupported,
+                        None,
+                        false,
+                        |w: u16, h: u16| {
+                            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                            let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                            let supported_h = available / 2;
+                            let unsupported_h =
+                                available.saturating_sub(supported_h + FILE_LIST_GAP);
+                            Rect {
+                                x: LEFT_MARGIN,
+                                y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+                                w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                                h: unsupported_h,
+                            }
+                        },
+                    );
+
+                    self.widgets.push(Box::new(unsupported_list));
+                }
+
                 self.selected_widget = 1;
             }
             Err(_) => (),
@@ -494,25 +503,6 @@ impl App {
             },
         );
 
-        let unsupported_list = UIGroupedList::new(
-            "Unsupported (not moved)".to_string(),
-            unsupported,
-            None,
-            false,
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                let supported_h = available / 2;
-                let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: unsupported_h,
-                }
-            },
-        );
-
         let mut menu = UIMenu::new(
             MENU_SORT_SUCCESS,
             format!("Done! Moved {} files.", count),
@@ -523,11 +513,29 @@ impl App {
 
         menu.add_item("Back".to_string(), ACTION_BACK.to_string());
 
-        self.widgets = vec![
-            Box::new(menu),
-            Box::new(supported_list),
-            Box::new(unsupported_list),
-        ];
+        self.widgets = vec![Box::new(menu), Box::new(supported_list)];
+
+        if unsupported.len() > 0 {
+            let unsupported_list = UIGroupedList::new(
+                "Unsupported (not moved)".to_string(),
+                unsupported,
+                None,
+                false,
+                |w: u16, h: u16| {
+                    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+                    let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+                    let supported_h = available / 2;
+                    let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
+                    Rect {
+                        x: LEFT_MARGIN,
+                        y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+                        w: w - LEFT_MARGIN - RIGHT_MARGIN,
+                        h: unsupported_h,
+                    }
+                },
+            );
+            self.widgets.push(Box::new(unsupported_list));
+        }
     }
 
     fn go_to_duplicates_page(&mut self) {
