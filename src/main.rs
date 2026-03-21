@@ -1,8 +1,7 @@
 mod buffer;
 mod event_bus;
 mod file_duplicates;
-mod file_sorting;
-mod file_types;
+mod file_sorting; mod file_types;
 mod term;
 mod ui;
 mod widgets;
@@ -16,6 +15,8 @@ use crate::{
     term::read_key,
     widgets::{UIFileList, UIInputDialog, UIMenu, UIProgressBar, Widget},
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{
     collections::HashMap,
     env,
@@ -26,7 +27,6 @@ use std::{
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
-
 const USAGE: &str = "\
 Usage: crabsort <directory>
 
@@ -62,6 +62,17 @@ static MAIN_MENU_SIZE: fn(u16, u16) -> Rect = |w: u16, h: u16| {
     }
 };
 
+static PROGRESS_BAR_SIZE: fn(u16, u16) -> Rect = |bw: u16, bh: u16| {
+    let h = 7;
+    let w = bw - 10;
+    Rect {
+        x: bw / 2 - w / 2,
+        y: bh / 2 - h / 2,
+        w,
+        h,
+    }
+};
+
 struct App {
     dir: PathBuf,
     buffer: buffer::Buffer,
@@ -79,7 +90,9 @@ struct App {
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
     sort_thread: Option<JoinHandle<Option<Vec<FileTreeItem>>>>,
-    pending_sort: Option<Vec<FileTreeItem>>,
+    // sort_selected: Rc<RefCell<HashMap<String, Vec<String>>>>,
+    sort_selected: Rc<RefCell<Vec<FileTreeItem>>>,
+    // pending_sort: Option<Vec<FileTreeItem>>,
 
     quit: bool,
 }
@@ -125,8 +138,10 @@ impl App {
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             duplicates_thread: None,
             sort_thread: None,
-            pending_sort: None,
+            // pending_sort: None,
             latest_input: None,
+            // sort_selected: Rc::new(RefCell::new(HashMap::new())),
+            sort_selected: Rc::new(RefCell::new(Vec::new())),
             quit: false,
         }
     }
@@ -258,7 +273,8 @@ impl App {
                 (MENU_CONFIRM_SORT, "no")
                 | (MENU_SORT_SUCCESS, ACTION_BACK)
                 | (MENU_DUPLICATES, ACTION_BACK) => {
-                    self.pending_sort = None;
+                    // self.pending_sort = None;
+                    self.sort_selected.borrow_mut().clear();
                     self.go_to_first_page()
                 }
                 _ => {}
@@ -283,10 +299,12 @@ impl App {
     }
 
     fn handle_confirm_sort(&mut self) {
-        let Some(plan) = self.pending_sort.take() else {
-            self.go_to_first_page();
-            return;
-        };
+        // let Some(plan) = self.pending_sort.take() else {
+        //     self.go_to_first_page();
+        //     return;
+        // };
+
+        let plan = self.sort_selected.borrow().to_vec();
 
         let desc = Arc::new(Mutex::new("Moving files...".to_string()));
         let progress_desc = Arc::new(Mutex::new(String::new()));
@@ -296,16 +314,7 @@ impl App {
             Some(progress_desc.clone()),
             self.progress_current.clone(),
             self.progress_max.clone(),
-            |bw: u16, bh: u16| {
-                let h = 7;
-                let w = bw - 10;
-                Rect {
-                    x: bw / 2 - w / 2,
-                    y: bh / 2 - h / 2,
-                    w,
-                    h,
-                }
-            },
+            PROGRESS_BAR_SIZE,
         );
         self.important_widget = Some(Box::new(progress_bar));
 
@@ -321,7 +330,8 @@ impl App {
         match fix_duplicates_in_dir(&self.dir, dry) {
             Ok(files) => {
                 if dry {
-                    self.pending_sort = Some(files.clone());
+                    // self.pending_sort = Some(files.clone());
+                    *self.sort_selected.borrow_mut() = files.clone();
                 }
                 let (supported, unsupported) = split_supported_unsupported(files);
 
@@ -330,13 +340,14 @@ impl App {
                     supported,
                     2,
                     self.bus.clone(),
+                    Some(self.sort_selected.clone()),
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
                         let supported_h = available / 2;
                         Rect {
                             x: LEFT_MARGIN,
-                            y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+                            y: FILE_LIST_TOP,
                             w: w - LEFT_MARGIN - RIGHT_MARGIN,
                             h: supported_h,
                         }
@@ -348,6 +359,7 @@ impl App {
                     unsupported,
                     2,
                     self.bus.clone(),
+                    None,
                     |w: u16, h: u16| {
                         let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                         let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -393,16 +405,7 @@ impl App {
             Some(progress_desc.clone()),
             self.progress_current.clone(),
             self.progress_max.clone(),
-            |bw: u16, bh: u16| {
-                let h = 7;
-                let w = bw - 10;
-                Rect {
-                    x: bw / 2 - w / 2,
-                    y: bh / 2 - h / 2,
-                    w,
-                    h,
-                }
-            },
+            PROGRESS_BAR_SIZE,
         );
         self.important_widget = Some(Box::new(progress_bar));
 
@@ -434,6 +437,7 @@ impl App {
             dir_files,
             2,
             self.bus.clone(),
+            None,
             DIR_LIST_SIZE,
         );
 
@@ -464,6 +468,7 @@ impl App {
             supported,
             2,
             self.bus.clone(),
+            None,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -482,6 +487,7 @@ impl App {
             unsupported,
             2,
             self.bus.clone(),
+            None,
             |w: u16, h: u16| {
                 let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
                 let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
@@ -554,7 +560,7 @@ impl App {
             total_size / 1024 / 1024,
         );
 
-        let dir_list = UIFileList::new(title, dir_files, 2, self.bus.clone(), DIR_LIST_SIZE);
+        let dir_list = UIFileList::new(title, dir_files, 2, self.bus.clone(), None, DIR_LIST_SIZE);
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,

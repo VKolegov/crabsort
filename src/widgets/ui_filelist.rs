@@ -1,7 +1,14 @@
-use std::collections::HashSet;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use crate::{
-    buffer::Buffer, event_bus::EventBus, term::Key, ui::{Rect, draw_string_list_flat}
+    buffer::Buffer,
+    event_bus::EventBus,
+    term::Key,
+    ui::{Rect, draw_string_list_flat},
 };
 
 use super::widget::Widget;
@@ -23,6 +30,9 @@ pub struct UIFileList {
     lines: Vec<String>,
 
     bus: EventBus,
+    output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
+    m: HashMap<usize, (usize, usize)>,
+    r_m: HashMap<(usize, usize), usize>,
 
     r: Rect,
     layout_cb: fn(u16, u16) -> Rect,
@@ -34,31 +44,77 @@ impl UIFileList {
         items: Vec<FileTreeItem>,
         max_depth: usize,
         bus: EventBus,
+        // output: Option<Rc<RefCell<HashMap<String, Vec<String>>>>>,
+        output: Option<Rc<RefCell<Vec<FileTreeItem>>>>,
         c: fn(u16, u16) -> Rect,
     ) -> Self {
         let mut lines: Vec<String> = Vec::new();
         flatten_tree(&items, max_depth, 0, &mut lines);
 
+        let mut m = HashMap::<usize, (usize, usize)>::new();
+        let mut r_m = HashMap::<(usize, usize), usize>::new();
+
+        let mut selected = HashSet::new();
+
+        let mut count = 1;
+        for (i, item) in items.iter().enumerate() {
+            let pidor = FileTreeItem {
+                path: item.path.clone(),
+                children: vec![],
+            };
+
+            for (j, _child) in item.children.iter().enumerate() {
+                m.insert(count + j, (i, j));
+                r_m.insert((i, j), count + j);
+                selected.insert(count + j);
+            }
+
+            if let Some(rc) = &output {
+                rc.borrow_mut().push(pidor);
+            }
+            count += item.children.len() + 1;
+        }
+
         Self {
             title,
             items,
             selected_n: 0,
-            selected: HashSet::new(),
+            selected,
             max_depth,
             scroll_offset: 0,
             lines,
             bus,
+            output,
+            m,
+            r_m,
             r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
     }
 
-    // pub fn flatten(&mut self) {
-    //
-    //     let mut lines: Vec<String> = Vec::new();
-    //     flatten_tree(&self.items, self.max_depth, 0, &mut lines);
-    //     self.lines = lines;
-    // }
+    fn refresh_output(&self) -> Vec<FileTreeItem> {
+        let mut m: Vec<FileTreeItem> = vec![];
+
+        let mut current_line: usize = 0;
+        for file_group in &self.items {
+            for f_f in &file_group.children {
+                current_line += 1;
+                let mut children = vec![];
+                if self.selected.contains(&current_line) {
+                    children.push(f_f.clone());
+                }
+
+                if children.len() > 0 {
+                    m.push(FileTreeItem {
+                        path: file_group.path.clone(),
+                        children,
+                    });
+                }
+            }
+            current_line += 1;
+        }
+        m
+    }
 }
 
 impl Widget for UIFileList {
@@ -94,6 +150,10 @@ impl Widget for UIFileList {
             }
             Key::Char('j') => {
                 let l = self.lines.len();
+
+                if l == 0 {
+                    return;
+                }
                 //
                 if self.selected_n < l - 1 {
                     self.selected_n += 1;
@@ -118,6 +178,10 @@ impl Widget for UIFileList {
                     self.selected.remove(&self.selected_n);
                 } else {
                     self.selected.insert(self.selected_n);
+                }
+
+                if let Some(o) = self.output.as_ref() {
+                    *o.borrow_mut() = self.refresh_output();
                 }
             }
             _ => (),
