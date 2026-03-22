@@ -137,7 +137,7 @@ fn to_fd() -> i32 {
 }
 
 pub fn t_flush() {
-    io::stdout().flush().unwrap();
+    io::stdout().flush().unwrap(); // safe: stdout flush failure is unrecoverable anyway
 }
 
 

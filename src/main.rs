@@ -255,14 +255,14 @@ impl App {
             .is_some_and(|h| h.is_finished());
 
         if finished {
-            let handle = self.duplicates_thread.take().unwrap();
-            if let Some(hm) = handle.join().unwrap() {
-                *self.duplicates_map.lock().unwrap() = hm;
+            let handle = self.duplicates_thread.take().unwrap(); // safe: checked is_some_and above
+            if let Some(hm) = handle.join().unwrap() { // TODO: handle thread panic gracefully
+                *self.duplicates_map.lock().unwrap() = hm; // safe: mutex is never poisoned in normal flow
                 self.bus.push(MENU_MAIN, "duplicates_ready".to_string());
             }
             self.important_widget = None;
-            *self.progress_max.lock().unwrap() = 0;
-            *self.progress_current.lock().unwrap() = 0;
+            *self.progress_max.lock().unwrap() = 0; // safe: single-threaded UI access after thread join
+            *self.progress_current.lock().unwrap() = 0; // safe: same as above
 
             self.go_to_duplicates_page();
         }
@@ -272,15 +272,15 @@ impl App {
         let finished = self.sort_thread.as_ref().is_some_and(|h| h.is_finished());
 
         if finished {
-            let handle = self.sort_thread.take().unwrap();
-            if let Some(files) = handle.join().unwrap() {
+            let handle = self.sort_thread.take().unwrap(); // safe: checked is_some_and above
+            if let Some(files) = handle.join().unwrap() { // TODO: handle thread panic gracefully
                 self.go_to_sort_success_page(files);
             } else {
                 self.go_to_first_page();
             }
             self.important_widget = None;
-            *self.progress_max.lock().unwrap() = 0;
-            *self.progress_current.lock().unwrap() = 0;
+            *self.progress_max.lock().unwrap() = 0; // safe: single-threaded UI access after thread join
+            *self.progress_current.lock().unwrap() = 0; // safe: same as above
         }
     }
 
@@ -437,6 +437,7 @@ impl App {
 
         let min_size: u64 = match self.latest_input.take() {
             Some(txt) => {
+                // FIXME: will panic on non-numeric input from user
                 txt.parse::<u64>().unwrap() * 1024 // kb
             }
             None => 100 * 1024, // 100 kb
@@ -539,7 +540,7 @@ impl App {
     }
 
     fn go_to_duplicates_page(&mut self) {
-        let dm = self.duplicates_map.lock().unwrap();
+        let dm = self.duplicates_map.lock().unwrap(); // safe: no thread holds this lock at this point
 
         let mut dir_files = vec![];
 

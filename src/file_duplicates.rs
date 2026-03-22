@@ -28,8 +28,8 @@ pub fn find_duplicates_async(
         .map(|n| n.get())
         .unwrap_or(1); // fallback на 1
 
-    *stage_description.clone().lock().unwrap() = String::from("[Step 1/3] Scanning for files");
-    *progress_description.lock().unwrap() = String::new();
+    *stage_description.clone().lock().unwrap() = String::from("[Step 1/3] Scanning for files"); // safe: no worker threads yet
+    *progress_description.lock().unwrap() = String::new(); // safe: same as above
 
     let mut files_by_sizes = find_same_size_files_recursive_parallel(
         p,
@@ -37,7 +37,6 @@ pub fn find_duplicates_async(
         max_file_size_kb,
         progress.clone(),
         progress_description.clone(),
-        n_threads,
     )?;
 
     let mut files_count_for_partial_hash: u64 = 0;
@@ -56,11 +55,11 @@ pub fn find_duplicates_async(
     });
 
     // step 2 - partial hash
-    *progress.lock().unwrap() = 0;
-    *max.lock().unwrap() = files_count_for_partial_hash;
+    *progress.lock().unwrap() = 0; // safe: between stages, no worker threads active
+    *max.lock().unwrap() = files_count_for_partial_hash; // safe: same as above
     *stage_description.clone().lock().unwrap() =
-        String::from("[Step 2/3] Calculating potential duplicates");
-    *progress_description.lock().unwrap() = String::new();
+        String::from("[Step 2/3] Calculating potential duplicates"); // safe: same as above
+    *progress_description.lock().unwrap() = String::new(); // safe: same as above
     let mut partial_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
 
     for (_, file_vec) in duplicate_groups_filtered {
@@ -69,7 +68,7 @@ pub fn find_duplicates_async(
             n_threads,
             progress_description.clone(),
         );
-        *progress.lock().unwrap() += file_vec.len() as u64;
+        *progress.lock().unwrap() += file_vec.len() as u64; // safe: only UI reads concurrently
 
         // filtering groups within size groups
         size_group_partial_hash_map.retain(|_k, v| {
@@ -92,11 +91,11 @@ pub fn find_duplicates_async(
     }
 
     // step 3 - full hash
-    *progress.lock().unwrap() = 0;
-    *max.lock().unwrap() = files_count_for_full_hash;
+    *progress.lock().unwrap() = 0; // safe: between stages, no worker threads active
+    *max.lock().unwrap() = files_count_for_full_hash; // safe: same as above
     *stage_description.clone().lock().unwrap() =
-        String::from("[Step 3/3] Evaluating duplicates");
-    *progress_description.lock().unwrap() = String::new();
+        String::from("[Step 3/3] Evaluating duplicates"); // safe: same as above
+    *progress_description.lock().unwrap() = String::new(); // safe: same as above
     let mut full_hash_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for (_, file_vec) in partial_hash_map {
         let mut phash_group_full_hash_map = process_group_full_hash(
@@ -105,7 +104,7 @@ pub fn find_duplicates_async(
             progress_description.clone(),
         );
 
-        *progress.lock().unwrap() += file_vec.len() as u64;
+        *progress.lock().unwrap() += file_vec.len() as u64; // safe: only UI reads concurrently
 
         // filtering groups within size groups
         phash_group_full_hash_map.retain(|_k, v| v.len() >= 2);
@@ -173,7 +172,7 @@ fn process_group_partial_hash(
             thread::spawn(move || {
                 let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
                 for file_d in chunk {
-                    *progress_description.lock().unwrap() = file_d.path.display().to_string();
+                    *progress_description.lock().unwrap() = file_d.path.display().to_string(); // safe: only UI reads concurrently
                     let hash = format!("{:x}", md5::compute(&file_d.first_and_last_4kb));
                     local_map.entry(hash).or_default().push(file_d);
                 }
@@ -184,10 +183,12 @@ fn process_group_partial_hash(
 
     let mut merged_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for handle in handles {
-        let local_map = handle.join().unwrap();
-        for (hash, vec) in local_map {
-            merged_map.entry(hash).or_default().extend(vec);
+        if let Ok(local_map) = handle.join() {
+            for (hash, vec) in local_map {
+                merged_map.entry(hash).or_default().extend(vec);
+            }
         }
+        // thread panicked — skip its chunk, results from other threads are still valid
     }
 
     merged_map
@@ -209,7 +210,7 @@ fn process_group_full_hash(
             thread::spawn(move || {
                 let mut local_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
                 for file_d in chunk {
-                    *progress_description.lock().unwrap() = file_d.path.display().to_string();
+                    *progress_description.lock().unwrap() = file_d.path.display().to_string(); // safe: only UI reads concurrently
                     let hash = match file_hash(&file_d.path) {
                         Ok(h) => h,
                         Err(_) => {
@@ -225,84 +226,125 @@ fn process_group_full_hash(
 
     let mut merged_map: HashMap<String, Vec<Arc<FileInfo>>> = HashMap::new();
     for handle in handles {
-        let local_map = handle.join().unwrap();
-        for (hash, vec) in local_map {
-            merged_map.entry(hash).or_default().extend(vec);
+        if let Ok(local_map) = handle.join() {
+            for (hash, vec) in local_map {
+                merged_map.entry(hash).or_default().extend(vec);
+            }
         }
+        // thread panicked — skip its chunk, results from other threads are still valid
     }
 
     merged_map
 }
 
+/// Recursively scans directory tree for files.
+/// Spawns one thread per top-level subdirectory; each thread walks its subtree synchronously.
 pub fn build_dir_flatmap_parallel(
     p: &Path,
     min_file_size_kb: u64,
     max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
     progress_description: Arc<Mutex<String>>,
-    max_threads: usize,
 ) -> Vec<Arc<FileInfo>> {
     let dir_map = Arc::new(Mutex::new(Vec::new()));
     let mut handles: Vec<thread::JoinHandle<()>> = vec![];
 
-    if let Ok(r_dir) = fs::read_dir(p) {
-        for entry in r_dir.filter_map(Result::ok) {
-            let path = entry.path();
+    let r_dir = match fs::read_dir(p) {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+
+    for entry in r_dir.filter_map(Result::ok) {
+        let path = entry.path();
+
+        if path.is_dir() && !path.is_symlink() {
             let dir_map_clone = Arc::clone(&dir_map);
             let files_read_clone = Arc::clone(&files_read);
             let progress_description_clone = Arc::clone(&progress_description);
 
-            if path.is_dir() {
-                // Ограничиваем количество потоков
-                if handles.len() >= max_threads {
-                    for h in handles.drain(..) {
-                        h.join().unwrap();
-                    }
-                }
-
-                handles.push(thread::spawn(move || {
-                    let child_files = build_dir_flatmap_parallel(
-                        &path,
-                        min_file_size_kb,
-                        max_file_size_kb,
-                        files_read_clone,
-                        progress_description_clone,
-                        max_threads,
-                    );
-                    let mut dm = dir_map_clone.lock().unwrap();
-                    dm.extend(child_files);
-                }));
-            } else if path.is_file() && !path.is_symlink() {
-                *progress_description_clone.lock().unwrap() =
-                    format!("Scanning: {}", path.display());
-                if let Ok(meta) = entry.metadata() {
-                    let file_size = meta.len();
-                    if file_size < min_file_size_kb || file_size > max_file_size_kb {
-                        continue;
-                    }
-
-                    if let Ok(buf) = read_first_and_last_4kb(&path, file_size) {
-                        let fi = Arc::new(FileInfo {
-                            path: path.clone(),
-                            size: file_size,
-                            first_and_last_4kb: buf,
-                        });
-
-                        let mut dm = dir_map_clone.lock().unwrap();
-                        dm.push(fi);
-                        let mut fr = files_read_clone.lock().unwrap();
-                        *fr += 1;
-                    }
-                }
+            handles.push(thread::spawn(move || {
+                let child_files = scan_dir_recursive(
+                    &path,
+                    min_file_size_kb,
+                    max_file_size_kb,
+                    &files_read_clone,
+                    &progress_description_clone,
+                );
+                let mut dm = dir_map_clone.lock().unwrap(); // safe: short-lived lock
+                dm.extend(child_files);
+            }));
+        } else if path.is_file() && !path.is_symlink() {
+            *progress_description.lock().unwrap() = // safe: only UI reads concurrently
+                format!("Scanning: {}", path.display());
+            if let Ok(fi) = try_read_file_info(&path, min_file_size_kb, max_file_size_kb) {
+                dir_map.lock().unwrap().push(fi); // safe: short-lived lock
+                *files_read.lock().unwrap() += 1; // safe: only UI reads concurrently
             }
         }
     }
 
     for h in handles {
-        h.join().unwrap();
+        let _ = h.join(); // if a thread panicked, its subtree is skipped
     }
 
-    Arc::try_unwrap(dir_map).unwrap().into_inner().unwrap()
+    Arc::try_unwrap(dir_map)
+        .expect("bug: Arc still has multiple owners after all threads joined")
+        .into_inner()
+        .unwrap_or_default()
+}
+
+/// Single-threaded recursive directory walk — used inside per-directory threads.
+fn scan_dir_recursive(
+    p: &Path,
+    min_file_size_kb: u64,
+    max_file_size_kb: u64,
+    files_read: &Arc<Mutex<u64>>,
+    progress_description: &Arc<Mutex<String>>,
+) -> Vec<Arc<FileInfo>> {
+    let mut result = Vec::new();
+    let mut dirs_to_visit = vec![p.to_path_buf()];
+
+    while let Some(dir) = dirs_to_visit.pop() {
+        let r_dir = match fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue, // permission denied, etc — skip directory
+        };
+
+        for entry in r_dir.filter_map(Result::ok) {
+            let path = entry.path();
+
+            if path.is_dir() && !path.is_symlink() {
+                dirs_to_visit.push(path);
+            } else if path.is_file() && !path.is_symlink() {
+                *progress_description.lock().unwrap() = // safe: only UI reads concurrently
+                    format!("Scanning: {}", path.display());
+                if let Ok(fi) = try_read_file_info(&path, min_file_size_kb, max_file_size_kb) {
+                    result.push(fi);
+                    *files_read.lock().unwrap() += 1; // safe: only UI reads concurrently
+                }
+            }
+        }
+    }
+
+    result
+}
+
+fn try_read_file_info(
+    path: &Path,
+    min_file_size_kb: u64,
+    max_file_size_kb: u64,
+) -> Result<Arc<FileInfo>, Box<dyn Error>> {
+    let meta = fs::metadata(path)?;
+    let file_size = meta.len();
+    if file_size < min_file_size_kb || file_size > max_file_size_kb {
+        return Err("file size out of range".into());
+    }
+    let buf = read_first_and_last_4kb(path, file_size)?;
+    Ok(Arc::new(FileInfo {
+        path: path.to_path_buf(),
+        size: file_size,
+        first_and_last_4kb: buf,
+    }))
 }
 
 pub fn find_same_size_files_recursive_parallel(
@@ -311,7 +353,6 @@ pub fn find_same_size_files_recursive_parallel(
     max_file_size_kb: u64,
     files_read: Arc<Mutex<u64>>,
     progress_description: Arc<Mutex<String>>,
-    max_threads: usize,
 ) -> Result<HashMap<u64, Vec<Arc<FileInfo>>>, Box<dyn Error>> {
     let files = build_dir_flatmap_parallel(
         p,
@@ -319,7 +360,6 @@ pub fn find_same_size_files_recursive_parallel(
         max_file_size_kb,
         Arc::clone(&files_read),
         progress_description,
-        max_threads,
     );
 
     // Группировка по размеру

@@ -31,8 +31,8 @@ pub fn move_files_with_progress(
         .filter(|item| item.title != "unsupported")
         .map(|item| item.children.len() as u64)
         .sum();
-    *max.lock().unwrap() = total;
-    *progress.lock().unwrap() = 0;
+    *max.lock().unwrap() = total; // safe: worker threads not started yet
+    *progress.lock().unwrap() = 0; // safe: same as above
 
     for item in &plan {
         if item.title == "unsupported" {
@@ -49,7 +49,7 @@ pub fn move_files_with_progress(
                 .unwrap_or("");
             let new_path = Path::new(target_dir).join(filename);
 
-            *description.lock().unwrap() = child.clone();
+            *description.lock().unwrap() = child.clone(); // safe: only UI reads this concurrently
 
             if let Err(e) = fs::copy(&source, &new_path) {
                 eprintln!(
@@ -62,7 +62,7 @@ pub fn move_files_with_progress(
                 eprintln!("Failed to remove {}: {}", source.display(), e);
             }
 
-            *progress.lock().unwrap() += 1;
+            *progress.lock().unwrap() += 1; // safe: only UI reads this concurrently
         }
     }
 
@@ -118,7 +118,7 @@ fn traverse_dir(p: &Path, dry: bool, verbose: bool) -> Result<HashMap<String, Ve
             continue;
         }
 
-        let (full_path, new_path) = paths.unwrap();
+        let (full_path, new_path) = paths.unwrap(); // safe: checked is_none() above with continue
 
         let full_path_str = full_path.to_str().ok_or("wrong target dir name")?;
 

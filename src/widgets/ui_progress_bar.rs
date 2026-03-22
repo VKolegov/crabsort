@@ -48,8 +48,8 @@ impl Widget for UIProgressBar {
 
         let r = &self.r;
 
-        let current_val = *self.current.lock().unwrap();
-        let max_val = *self.max.lock().unwrap();
+        let current_val = *self.current.lock().unwrap(); // safe: lock is short-lived, read-only
+        let max_val = *self.max.lock().unwrap(); // safe: same as above
 
         let detail_string;
         let mut progress_line = String::new();
@@ -72,7 +72,7 @@ impl Widget for UIProgressBar {
 
         let title = self.title.clone();
 
-        draw_box(buffer, &r, &*title.lock().unwrap(), focused);
+        draw_box(buffer, &r, &*title.lock().unwrap(), focused); // safe: lock is short-lived, read-only
         fill_rect(buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
 
         buffer.put_str(
@@ -88,7 +88,7 @@ impl Widget for UIProgressBar {
             buffer.put_str(
                 r.x + 2,
                 r.y + 3,
-                &*desc.lock().unwrap(),
+                &*desc.lock().unwrap(), // safe: lock is short-lived, read-only
                 buffer::Color::Yellow,
                 buffer::Color::Black,
             );
