@@ -76,6 +76,30 @@ static PROGRESS_BAR_SIZE: fn(u16, u16) -> Rect = |bw: u16, bh: u16| {
     }
 };
 
+static SORT_SUPPORTED_FILES_SIZE: fn(u16, u16) -> Rect = |w: u16, h: u16| {
+    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+    let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+    let supported_h = available / 2;
+    Rect {
+        x: LEFT_MARGIN,
+        y: FILE_LIST_TOP,
+        w: w - LEFT_MARGIN - RIGHT_MARGIN,
+        h: supported_h,
+    }
+};
+static SORT_UNSUPPORTED_FILES_SIZE: fn(u16, u16) -> Rect = |w: u16, h: u16| {
+    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
+    let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
+    let supported_h = available / 2;
+    let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
+    Rect {
+        x: LEFT_MARGIN,
+        y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
+        w: w - LEFT_MARGIN - RIGHT_MARGIN,
+        h: unsupported_h,
+    }
+};
+
 struct App {
     dir: PathBuf,
     buffer: buffer::Buffer,
@@ -256,7 +280,8 @@ impl App {
 
         if finished {
             let handle = self.duplicates_thread.take().unwrap(); // safe: checked is_some_and above
-            if let Some(hm) = handle.join().unwrap() { // TODO: handle thread panic gracefully
+            if let Some(hm) = handle.join().unwrap() {
+                // TODO: handle thread panic gracefully
                 *self.duplicates_map.lock().unwrap() = hm; // safe: mutex is never poisoned in normal flow
                 self.bus.push(MENU_MAIN, "duplicates_ready".to_string());
             }
@@ -273,7 +298,8 @@ impl App {
 
         if finished {
             let handle = self.sort_thread.take().unwrap(); // safe: checked is_some_and above
-            if let Some(files) = handle.join().unwrap() { // TODO: handle thread panic gracefully
+            if let Some(files) = handle.join().unwrap() {
+                // TODO: handle thread panic gracefully
                 self.go_to_sort_success_page(files);
             } else {
                 self.go_to_first_page();
@@ -362,17 +388,7 @@ impl App {
                     supported,
                     Some(self.sort_selected.clone()),
                     true,
-                    |w: u16, h: u16| {
-                        let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                        let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                        let supported_h = available / 2;
-                        Rect {
-                            x: LEFT_MARGIN,
-                            y: FILE_LIST_TOP,
-                            w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                            h: supported_h,
-                        }
-                    },
+                    SORT_SUPPORTED_FILES_SIZE,
                 );
 
                 let mut menu = UIMenu::new(
@@ -394,19 +410,7 @@ impl App {
                         unsupported,
                         None,
                         false,
-                        |w: u16, h: u16| {
-                            let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                            let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                            let supported_h = available / 2;
-                            let unsupported_h =
-                                available.saturating_sub(supported_h + FILE_LIST_GAP);
-                            Rect {
-                                x: LEFT_MARGIN,
-                                y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
-                                w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                                h: unsupported_h,
-                            }
-                        },
+                        SORT_UNSUPPORTED_FILES_SIZE,
                     );
 
                     self.widgets.push(Box::new(unsupported_list));
@@ -491,17 +495,7 @@ impl App {
             supported,
             None,
             false,
-            |w: u16, h: u16| {
-                let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                let supported_h = available / 2;
-                Rect {
-                    x: LEFT_MARGIN,
-                    y: FILE_LIST_TOP,
-                    w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                    h: supported_h,
-                }
-            },
+            SORT_SUPPORTED_FILES_SIZE,
         );
 
         let mut menu = UIMenu::new(
@@ -522,18 +516,7 @@ impl App {
                 unsupported,
                 None,
                 false,
-                |w: u16, h: u16| {
-                    let menu_y = h - MENU_MARGIN_BOTTOM - MENU_HEIGHT;
-                    let available = menu_y.saturating_sub(FILE_LIST_TOP + FILE_LIST_GAP);
-                    let supported_h = available / 2;
-                    let unsupported_h = available.saturating_sub(supported_h + FILE_LIST_GAP);
-                    Rect {
-                        x: LEFT_MARGIN,
-                        y: FILE_LIST_TOP + supported_h + FILE_LIST_GAP,
-                        w: w - LEFT_MARGIN - RIGHT_MARGIN,
-                        h: unsupported_h,
-                    }
-                },
+                SORT_UNSUPPORTED_FILES_SIZE,
             );
             self.widgets.push(Box::new(unsupported_list));
         }
