@@ -108,11 +108,10 @@ struct App {
     selected_widget: usize,
     bus: EventBus,
 
-    progress_current: Arc<Mutex<u64>>,
-    progress_max: Arc<Mutex<u64>>,
+    progress: ProgressState,
+    modal: Option<Modal>,
 
     latest_input: Option<String>,
-    important_widget: Option<Box<dyn Widget>>,
 
     duplicates_map: Arc<Mutex<HashMap<String, Vec<Arc<FileInfo>>>>>,
     duplicates_thread: Option<JoinHandle<Option<HashMap<String, Vec<Arc<FileInfo>>>>>>,
@@ -137,6 +136,59 @@ const ACTION_BACK: &str = "back";
 const ACTION_QUIT: &str = "quit";
 
 const INPUT_DIALOG: &str = "input_test";
+
+/// Shared state for communicating progress between worker threads and UI.
+/// Worker threads write here via Arc<Mutex>, App reads and feeds into UIProgressBar.
+struct ProgressState {
+    title: Arc<Mutex<String>>,
+    description: Arc<Mutex<String>>,
+    current: Arc<Mutex<u64>>,
+    max: Arc<Mutex<u64>>,
+}
+
+impl ProgressState {
+    fn new() -> Self {
+        Self {
+            title: Arc::new(Mutex::new(String::new())),
+            description: Arc::new(Mutex::new(String::new())),
+            current: Arc::new(Mutex::new(0)),
+            max: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn reset(&self) {
+        *self.title.lock().unwrap() = String::new();
+        *self.description.lock().unwrap() = String::new();
+        *self.current.lock().unwrap() = 0;
+        *self.max.lock().unwrap() = 0;
+    }
+
+    fn read(&self) -> (String, String, u64, u64) {
+        (
+            self.title.lock().unwrap().clone(),
+            self.description.lock().unwrap().clone(),
+            *self.current.lock().unwrap(),
+            *self.max.lock().unwrap(),
+        )
+    }
+}
+
+/// Modal overlay — either a progress bar or an input dialog.
+/// Replaces the old `important_widget: Option<Box<dyn Widget>>`.
+/// This gives us typed access: we can call progress_bar.update() directly.
+enum Modal {
+    Progress(UIProgressBar),
+    Input(UIInputDialog),
+}
+
+impl Modal {
+    fn as_widget(&mut self) -> &mut dyn Widget {
+        match self {
+            Modal::Progress(pb) => pb,
+            Modal::Input(input) => input,
+        }
+    }
+}
 
 fn split_supported_unsupported(
     items: Vec<UIGroupedListItem>,
@@ -176,11 +228,10 @@ impl App {
             dir,
             widgets: vec![],
             selected_widget: 0,
-            important_widget: None,
+            modal: None,
             bus: EventBus::new(),
             buffer: buffer::Buffer::new(0, 0),
-            progress_current: Arc::new(Mutex::new(0)),
-            progress_max: Arc::new(Mutex::new(0)),
+            progress: ProgressState::new(),
             duplicates_map: Arc::new(Mutex::new(HashMap::new())),
             duplicates_thread: None,
             sort_thread: None,
@@ -224,34 +275,38 @@ impl App {
         for widget in self.widgets.iter_mut() {
             widget.handle_buf_size_change(w, h);
         }
-        if let Some(important_w) = self.important_widget.as_mut() {
-            important_w.handle_buf_size_change(w, h);
+        if let Some(modal) = self.modal.as_mut() {
+            modal.as_widget().handle_buf_size_change(w, h);
         }
         self.status_bar.handle_buf_size_change(w, h);
     }
 
     fn render(&mut self) {
+        let has_modal = self.modal.is_some();
+
         for (i, w) in self.widgets.iter_mut().enumerate() {
-            w.draw(
-                &mut self.buffer,
-                self.important_widget.is_none() && i == self.selected_widget,
-            );
+            w.draw(&mut self.buffer, !has_modal && i == self.selected_widget);
         }
-        let mut has_important_widget = false;
-        if let Some(w) = self.important_widget.as_mut() {
-            w.draw(&mut self.buffer, true);
-            has_important_widget = true;
+
+        if let Some(modal) = self.modal.as_mut() {
+            // Feed fresh data from worker threads into the progress bar
+            // before drawing. This is what replaced the Arc<Mutex> inside the widget.
+            if let Modal::Progress(pb) = modal {
+                let (title, desc, current, max) = self.progress.read();
+                pb.set_title(title);
+                pb.update(current, max, desc);
+            }
+            modal.as_widget().draw(&mut self.buffer, true);
         }
-        self.status_bar
-            .draw(&mut self.buffer, !has_important_widget);
+
+        self.status_bar.draw(&mut self.buffer, !has_modal);
     }
 
     fn handle_input(&mut self) -> bool {
         let k = read_key();
 
-        if let Some(w) = self.important_widget.as_mut() {
-            w.handle_input(k);
-
+        if let Some(modal) = self.modal.as_mut() {
+            modal.as_widget().handle_input(k);
             return true;
         }
 
@@ -285,9 +340,8 @@ impl App {
                 *self.duplicates_map.lock().unwrap() = hm; // safe: mutex is never poisoned in normal flow
                 self.bus.push(MENU_MAIN, "duplicates_ready".to_string());
             }
-            self.important_widget = None;
-            *self.progress_max.lock().unwrap() = 0; // safe: single-threaded UI access after thread join
-            *self.progress_current.lock().unwrap() = 0; // safe: same as above
+            self.modal = None;
+            self.progress.reset();
 
             self.go_to_duplicates_page();
         }
@@ -304,9 +358,8 @@ impl App {
             } else {
                 self.go_to_first_page();
             }
-            self.important_widget = None;
-            *self.progress_max.lock().unwrap() = 0; // safe: single-threaded UI access after thread join
-            *self.progress_current.lock().unwrap() = 0; // safe: same as above
+            self.modal = None;
+            self.progress.reset();
         }
     }
 
@@ -338,11 +391,11 @@ impl App {
                 INPUT_DIALOG => match payload_str {
                     "cancel" => {
                         self.latest_input = None;
-                        self.important_widget = None;
+                        self.modal = None;
                     }
                     _ => {
                         self.latest_input = Some(event.payload.clone());
-                        self.important_widget = None;
+                        self.modal = None;
 
                         self.handle_find_duplicates();
                     }
@@ -355,23 +408,18 @@ impl App {
     fn handle_confirm_sort(&mut self) {
         let plan = self.sort_selected.borrow().to_vec();
 
-        let desc = Arc::new(Mutex::new("Moving files...".to_string()));
-        let progress_desc = Arc::new(Mutex::new(String::new()));
+        self.progress.reset();
+        *self.progress.title.lock().unwrap() = "Moving files...".to_string();
 
-        let progress_bar = UIProgressBar::new(
-            desc.clone(),
-            Some(progress_desc.clone()),
-            self.progress_current.clone(),
-            self.progress_max.clone(),
-            PROGRESS_BAR_SIZE,
-        );
-        self.important_widget = Some(Box::new(progress_bar));
+        let progress_bar = UIProgressBar::new(String::new(), PROGRESS_BAR_SIZE);
+        self.modal = Some(Modal::Progress(progress_bar));
 
-        let counter = self.progress_current.clone();
-        let max = self.progress_max.clone();
+        let counter = self.progress.current.clone();
+        let max = self.progress.max.clone();
+        let description = self.progress.description.clone();
 
         self.sort_thread = Some(thread::spawn(move || {
-            move_files_with_progress(plan, counter, max, progress_desc).ok()
+            move_files_with_progress(plan, counter, max, description).ok()
         }));
     }
 
@@ -423,21 +471,16 @@ impl App {
     }
 
     fn handle_find_duplicates(&mut self) {
-        let desc = Arc::new(Mutex::new(String::new()));
-        let progress_desc = Arc::new(Mutex::new(String::new()));
+        self.progress.reset();
 
-        let progress_bar = UIProgressBar::new(
-            desc.clone(),
-            Some(progress_desc.clone()),
-            self.progress_current.clone(),
-            self.progress_max.clone(),
-            PROGRESS_BAR_SIZE,
-        );
-        self.important_widget = Some(Box::new(progress_bar));
+        let progress_bar = UIProgressBar::new(String::new(), PROGRESS_BAR_SIZE);
+        self.modal = Some(Modal::Progress(progress_bar));
 
         let p = self.dir.clone();
-        let counter = self.progress_current.clone();
-        let max = self.progress_max.clone();
+        let counter = self.progress.current.clone();
+        let max = self.progress.max.clone();
+        let title = self.progress.title.clone();
+        let description = self.progress.description.clone();
 
         let min_size: u64 = match self.latest_input.take() {
             Some(txt) => {
@@ -449,10 +492,8 @@ impl App {
 
         let max_size = 1 * 1024 * 1024 * 1024; // 1gb
 
-        let dc = desc.clone();
-        let progress_dc = progress_desc.clone();
         self.duplicates_thread = Some(thread::spawn(move || {
-            find_duplicates_async(&p, min_size, max_size, dc, progress_dc, counter, max).ok()
+            find_duplicates_async(&p, min_size, max_size, title, description, counter, max).ok()
         }));
     }
 
@@ -601,7 +642,7 @@ impl App {
             },
         );
 
-        self.important_widget = Some(Box::new(input_dialogue));
+        self.modal = Some(Modal::Input(input_dialogue));
     }
 }
 

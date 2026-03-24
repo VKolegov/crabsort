@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use crate::{
     buffer::{self, Buffer},
     term::Key,
@@ -9,31 +7,35 @@ use crate::{
 use super::widget::Widget;
 
 pub struct UIProgressBar {
-    title: Arc<Mutex<String>>,
-    description: Option<Arc<Mutex<String>>>,
-    current: Arc<Mutex<u64>>,
-    max: Arc<Mutex<u64>>,
+    title: String,
+    description: String,
+    current: u64,
+    max: u64,
 
     r: Rect,
     layout_cb: fn(u16, u16) -> Rect,
 }
 
 impl UIProgressBar {
-    pub fn new(
-        title: Arc<Mutex<String>>,
-        desc: Option<Arc<Mutex<String>>>,
-        current: Arc<Mutex<u64>>,
-        max: Arc<Mutex<u64>>,
-        c: fn(u16, u16) -> Rect,
-    ) -> Self {
+    pub fn new(title: String, c: fn(u16, u16) -> Rect) -> Self {
         Self {
             title,
-            description: desc,
-            current,
-            max,
+            description: String::new(),
+            current: 0,
+            max: 0,
             r: Rect::new(0, 0, 0, 0),
             layout_cb: c,
         }
+    }
+
+    pub fn update(&mut self, current: u64, max: u64, description: String) {
+        self.current = current;
+        self.max = max;
+        self.description = description;
+    }
+
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
     }
 }
 
@@ -48,20 +50,16 @@ impl Widget for UIProgressBar {
 
         let r = &self.r;
 
-        let current_val = *self.current.lock().unwrap(); // safe: lock is short-lived, read-only
-        let max_val = *self.max.lock().unwrap(); // safe: same as above
-
         let detail_string;
         let mut progress_line = String::new();
 
-
-        if max_val > 0 {
+        if self.max > 0 {
             let bar_width = r.w.saturating_sub(4) as u64;
-            let p = current_val * bar_width / max_val;
+            let p = self.current * bar_width / self.max;
             progress_line = "█".repeat(p as usize);
-            detail_string = format!("{}/{}", current_val, max_val);
-        } else { 
-            detail_string = format!("{}", current_val);
+            detail_string = format!("{}/{}", self.current, self.max);
+        } else {
+            detail_string = format!("{}", self.current);
         }
 
         let mut ri = r.clone();
@@ -70,9 +68,7 @@ impl Widget for UIProgressBar {
         ri.w -= 2;
         ri.h -= 2;
 
-        let title = self.title.clone();
-
-        draw_box(buffer, &r, &*title.lock().unwrap(), focused); // safe: lock is short-lived, read-only
+        draw_box(buffer, &r, &self.title, focused);
         fill_rect(buffer, &ri, ' ', buffer::Color::Black, buffer::Color::Black);
 
         buffer.put_str(
@@ -83,18 +79,17 @@ impl Widget for UIProgressBar {
             buffer::Color::Black,
         );
 
-
-        if let Some(desc) = &self.description {
+        if !self.description.is_empty() {
             buffer.put_str(
                 r.x + 2,
                 r.y + 3,
-                &*desc.lock().unwrap(), // safe: lock is short-lived, read-only
+                &self.description,
                 buffer::Color::Yellow,
                 buffer::Color::Black,
             );
         }
 
-        if max_val > 0 {
+        if self.max > 0 {
             buffer.put_str(
                 r.x + 2,
                 r.y + 4,
