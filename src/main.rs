@@ -578,16 +578,10 @@ impl App {
             }
             possible_savings += files[0].size * (files.len() - 1) as u64;
 
-            let children = files
-                .iter()
-                .map(|f| FileTreeItem {
-                    path: f.path.display().to_string(),
-                    children: Vec::new(),
-                })
-                .collect();
+            let children = files.iter().map(|f| f.path.display().to_string()).collect();
 
-            dir_files.push(FileTreeItem {
-                path: format!("Group {i} | {} MB", files[0].size / 1024 / 1024),
+            dir_files.push(UIGroupedListItem {
+                title: format!("Group {i} | {} MB", files[0].size / 1024 / 1024),
                 children,
             });
 
@@ -605,7 +599,7 @@ impl App {
         );
 
         // TODO: select oldest
-        let dir_list = UIFileList::new(title, dir_files, 2, None, false, DIR_LIST_SIZE);
+        let dir_list = UIGroupedList::new(title, dir_files, None, false, DIR_LIST_SIZE);
 
         let mut menu = UIMenu::new(
             MENU_DUPLICATES,

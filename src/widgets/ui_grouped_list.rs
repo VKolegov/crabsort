@@ -46,6 +46,8 @@ impl UIGroupedList {
 
         let mut selected = HashSet::new();
 
+        let mut offset = 0;
+
         for (i, item) in items.iter().enumerate() {
             if preselect_all {
                 for (j, _child) in item.children.iter().enumerate() {
@@ -53,11 +55,9 @@ impl UIGroupedList {
                 }
             }
 
-            group_offsets[i] = if i > 0 {
-                items[i - 1].children.len() + 1
-            } else {
-                0
-            }
+            group_offsets[i] = offset;
+
+            offset += item.children.len() + 1;
         }
 
         Self {
